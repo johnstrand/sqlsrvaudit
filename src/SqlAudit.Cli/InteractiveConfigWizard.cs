@@ -1,0 +1,400 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using SqlAudit.Core.Models;
+using SqlAudit.SqlServer;
+
+namespace SqlAudit.Cli;
+
+internal static class InteractiveConfigWizard
+{
+    public static int Run(CliOptions options)
+    {
+        var targetPath = ProjectConfigurationResolver.ResolveConfigPath(options.ConfigPath);
+
+        if (options.NonInteractive)
+        {
+            return RunNonInteractive(targetPath, options.Preset ?? ConfigPreset.Deep);
+        }
+
+        return RunInteractive(targetPath, options.Preset);
+    }
+
+    private static int RunNonInteractive(string targetPath, ConfigPreset preset)
+    {
+        var config = ConfigPresetFactory.Create(preset);
+        ProjectConfigurationResolver.SaveConfig(targetPath, config);
+
+        Console.WriteLine("Config saved (non-interactive).");
+        Console.WriteLine($"- Path: {Path.GetFullPath(targetPath)}");
+        Console.WriteLine($"- Preset: {PresetName(preset)}");
+
+        return 0;
+    }
+
+    private static int RunInteractive(string targetPath, ConfigPreset? preset)
+    {
+        var existing = ProjectConfigurationResolver.TryLoad(targetPath)
+            ?? (preset.HasValue ? ConfigPresetFactory.Create(preset.Value) : null);
+
+        Console.WriteLine("SqlAudit interactive config wizard");
+        Console.WriteLine($"Target file: {Path.GetFullPath(targetPath)}");
+        if (preset.HasValue)
+        {
+            Console.WriteLine($"Starting from preset: {PresetName(preset.Value)}");
+        }
+
+        Console.WriteLine();
+
+        var profile = PromptProfile(existing?.Profile ?? AuditProfile.Deep);
+        var format = PromptFormat(existing?.OutputFormat ?? OutputFormat.Both);
+        var defaultOutput = existing?.OutputDirectory ?? $"audit-output/{profile.ToString().ToLowerInvariant()}";
+        var outputDirectory = PromptString("Output directory", defaultOutput, allowEmpty: false)!;
+
+        var existingConnection = existing?.ConnectionString;
+        var connectionString = PromptString("Connection string (leave blank to omit from config)", existingConnection, allowEmpty: true);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            connectionString = null;
+        }
+
+        var checks = SqlServerHealthChecks.GetDescriptors(profile);
+        var active = BuildDefaultActiveSet(existing?.ActiveCheckIds, checks);
+        active = PromptCheckSelection(checks, active);
+
+        var optionOverrides = PromptOptionsOverrides(existing?.AuditOptions);
+        var storeOverrides = optionOverrides.HasValues() ? optionOverrides : null;
+
+        var allByDefault = checks.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var useDefaultCheckSet = active.SetEquals(allByDefault);
+
+        var config = new ProjectConfigFile
+        {
+            ConnectionString = connectionString,
+            Profile = profile,
+            OutputFormat = format,
+            OutputDirectory = outputDirectory,
+            MarkdownPath = existing?.MarkdownPath,
+            JsonPath = existing?.JsonPath,
+            FixesDirectory = existing?.FixesDirectory,
+            SuppressionsPath = existing?.SuppressionsPath,
+            ActiveCheckIds = useDefaultCheckSet
+                ? null
+                : checks.Where(c => active.Contains(c.Id)).Select(c => c.Id).ToArray(),
+            AuditOptions = storeOverrides
+        };
+
+        ProjectConfigurationResolver.SaveConfig(targetPath, config);
+
+        Console.WriteLine();
+        Console.WriteLine("Config saved.");
+        Console.WriteLine($"- Path: {Path.GetFullPath(targetPath)}");
+        Console.WriteLine($"- Profile: {profile}");
+        Console.WriteLine($"- Format: {format}");
+        Console.WriteLine($"- Active checks: {(useDefaultCheckSet ? "default set" : active.Count.ToString(CultureInfo.InvariantCulture))}");
+
+        return 0;
+    }
+
+    private static string PresetName(ConfigPreset preset) => preset switch
+    {
+        ConfigPreset.DeepStrict => "deep-strict",
+        _ => preset.ToString().ToLowerInvariant()
+    };
+
+    private static HashSet<string> BuildDefaultActiveSet(IReadOnlyList<string>? configuredIds, IReadOnlyList<CheckDescriptor> checks)
+    {
+        var available = checks.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (configuredIds is null || configuredIds.Count == 0)
+        {
+            return available;
+        }
+
+        var selected = configuredIds
+            .Where(available.Contains)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return selected.Count == 0 ? available : selected;
+    }
+
+    private static HashSet<string> PromptCheckSelection(IReadOnlyList<CheckDescriptor> checks, HashSet<string> active)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Check selection");
+        Console.WriteLine("Press Enter to keep defaults, or type 'custom' to choose individual checks.");
+        Console.Write($"Customize checks? [default: keep] > ");
+        var mode = Console.ReadLine();
+        if (!string.Equals(mode, "custom", StringComparison.OrdinalIgnoreCase))
+        {
+            return active;
+        }
+
+        while (true)
+        {
+            Console.WriteLine();
+            for (var i = 0; i < checks.Count; i++)
+            {
+                var check = checks[i];
+                var marker = active.Contains(check.Id) ? "x" : " ";
+                Console.WriteLine($"{i + 1,2}. [{marker}] {check.Id} {check.Title} ({check.Category})");
+            }
+
+            Console.WriteLine();
+            Console.WriteLine("Commands: done | all | none | toggle <n,n,...>");
+            Console.Write("> ");
+            var input = (Console.ReadLine() ?? string.Empty).Trim();
+
+            if (string.Equals(input, "done", StringComparison.OrdinalIgnoreCase))
+            {
+                if (active.Count == 0)
+                {
+                    Console.WriteLine("At least one check must remain active.");
+                    continue;
+                }
+
+                return active;
+            }
+
+            if (string.Equals(input, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                active = checks.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                continue;
+            }
+
+            if (string.Equals(input, "none", StringComparison.OrdinalIgnoreCase))
+            {
+                active.Clear();
+                continue;
+            }
+
+            if (input.StartsWith("toggle", StringComparison.OrdinalIgnoreCase))
+            {
+                var list = input.Length > 6 ? input[6..] : string.Empty;
+                ToggleNumbers(list, checks, active);
+                continue;
+            }
+
+            ToggleNumbers(input, checks, active);
+        }
+    }
+
+    private static void ToggleNumbers(string input, IReadOnlyList<CheckDescriptor> checks, HashSet<string> active)
+    {
+        var tokens = input
+            .Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        if (tokens.Length == 0)
+        {
+            Console.WriteLine("No check numbers provided.");
+            return;
+        }
+
+        foreach (var token in tokens)
+        {
+            if (!int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) || number < 1 || number > checks.Count)
+            {
+                Console.WriteLine($"Invalid check number: {token}");
+                continue;
+            }
+
+            var id = checks[number - 1].Id;
+            if (!active.Add(id))
+            {
+                active.Remove(id);
+            }
+        }
+    }
+
+    private static AuditOptionsOverrides PromptOptionsOverrides(AuditOptionsOverrides? existing)
+    {
+        var result = new AuditOptionsOverrides
+        {
+            LargeTableRowThreshold = existing?.LargeTableRowThreshold,
+            UnusedIndexMinUpdates = existing?.UnusedIndexMinUpdates,
+            UnusedIndexMaxReads = existing?.UnusedIndexMaxReads,
+            FragmentationMinPageCount = existing?.FragmentationMinPageCount,
+            FragmentationReorganizeThresholdPercent = existing?.FragmentationReorganizeThresholdPercent,
+            FragmentationRebuildThresholdPercent = existing?.FragmentationRebuildThresholdPercent,
+            LowPageDensityThresholdPercent = existing?.LowPageDensityThresholdPercent,
+            StaleStatsModificationPercent = existing?.StaleStatsModificationPercent,
+            StaleStatsMinModifications = existing?.StaleStatsMinModifications,
+            IdentityUsageWarningPercent = existing?.IdentityUsageWarningPercent,
+            IdentityUsageCriticalPercent = existing?.IdentityUsageCriticalPercent
+        };
+
+        Console.WriteLine();
+        Console.Write("Customize threshold overrides? [y/N] > ");
+        var input = Console.ReadLine();
+        if (!IsYes(input))
+        {
+            return result;
+        }
+
+        result.LargeTableRowThreshold = PromptLong("LargeTableRowThreshold", result.LargeTableRowThreshold);
+        result.UnusedIndexMinUpdates = PromptLong("UnusedIndexMinUpdates", result.UnusedIndexMinUpdates);
+        result.UnusedIndexMaxReads = PromptLong("UnusedIndexMaxReads", result.UnusedIndexMaxReads);
+        result.FragmentationMinPageCount = PromptInt("FragmentationMinPageCount", result.FragmentationMinPageCount);
+        result.FragmentationReorganizeThresholdPercent = PromptDouble("FragmentationReorganizeThresholdPercent", result.FragmentationReorganizeThresholdPercent);
+        result.FragmentationRebuildThresholdPercent = PromptDouble("FragmentationRebuildThresholdPercent", result.FragmentationRebuildThresholdPercent);
+        result.LowPageDensityThresholdPercent = PromptDouble("LowPageDensityThresholdPercent", result.LowPageDensityThresholdPercent);
+        result.StaleStatsModificationPercent = PromptDouble("StaleStatsModificationPercent", result.StaleStatsModificationPercent);
+        result.StaleStatsMinModifications = PromptLong("StaleStatsMinModifications", result.StaleStatsMinModifications);
+        result.IdentityUsageWarningPercent = PromptDouble("IdentityUsageWarningPercent", result.IdentityUsageWarningPercent);
+        result.IdentityUsageCriticalPercent = PromptDouble("IdentityUsageCriticalPercent", result.IdentityUsageCriticalPercent);
+
+        return result;
+    }
+
+    private static AuditProfile PromptProfile(AuditProfile @default)
+    {
+        while (true)
+        {
+            Console.Write($"Profile [quick/deep] (default: {@default.ToString().ToLowerInvariant()}) > ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return @default;
+            }
+
+            if (Enum.TryParse<AuditProfile>(input, true, out var profile))
+            {
+                return profile;
+            }
+
+            Console.WriteLine("Please enter 'quick' or 'deep'.");
+        }
+    }
+
+    private static OutputFormat PromptFormat(OutputFormat @default)
+    {
+        while (true)
+        {
+            Console.Write($"Output format [markdown/json/both] (default: {@default.ToString().ToLowerInvariant()}) > ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return @default;
+            }
+
+            if (Enum.TryParse<OutputFormat>(input, true, out var format))
+            {
+                return format;
+            }
+
+            Console.WriteLine("Please enter 'markdown', 'json', or 'both'.");
+        }
+    }
+
+    private static string? PromptString(string label, string? @default, bool allowEmpty)
+    {
+        while (true)
+        {
+            Console.Write($"{label}{(@default is null ? string.Empty : $" (default: {@default})")} > ");
+            var input = Console.ReadLine();
+
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                if (allowEmpty)
+                {
+                    return @default;
+                }
+
+                if (!string.IsNullOrWhiteSpace(@default))
+                {
+                    return @default;
+                }
+
+                Console.WriteLine("A value is required.");
+                continue;
+            }
+
+            return input.Trim();
+        }
+    }
+
+    private static long? PromptLong(string name, long? current)
+    {
+        while (true)
+        {
+            Console.Write($"{name} (blank keep{(current.HasValue ? $": {current.Value}" : ", unset")}) > ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return current;
+            }
+
+            if (long.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            {
+                return value;
+            }
+
+            Console.WriteLine("Enter a valid integer.");
+        }
+    }
+
+    private static int? PromptInt(string name, int? current)
+    {
+        while (true)
+        {
+            Console.Write($"{name} (blank keep{(current.HasValue ? $": {current.Value}" : ", unset")}) > ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return current;
+            }
+
+            if (int.TryParse(input, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            {
+                return value;
+            }
+
+            Console.WriteLine("Enter a valid integer.");
+        }
+    }
+
+    private static double? PromptDouble(string name, double? current)
+    {
+        while (true)
+        {
+            Console.Write($"{name} (blank keep{(current.HasValue ? $": {current.Value.ToString(CultureInfo.InvariantCulture)}" : ", unset")}) > ");
+            var input = Console.ReadLine();
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return current;
+            }
+
+            if (double.TryParse(input, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var value))
+            {
+                return value;
+            }
+
+            Console.WriteLine("Enter a valid decimal number.");
+        }
+    }
+
+    private static bool IsYes(string? input)
+    {
+        return string.Equals(input?.Trim(), "y", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(input?.Trim(), "yes", StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+internal static class AuditOptionsOverridesExtensions
+{
+    public static bool HasValues(this AuditOptionsOverrides options)
+    {
+        return options.LargeTableRowThreshold.HasValue
+               || options.UnusedIndexMinUpdates.HasValue
+               || options.UnusedIndexMaxReads.HasValue
+               || options.FragmentationMinPageCount.HasValue
+               || options.FragmentationReorganizeThresholdPercent.HasValue
+               || options.FragmentationRebuildThresholdPercent.HasValue
+               || options.LowPageDensityThresholdPercent.HasValue
+               || options.StaleStatsModificationPercent.HasValue
+               || options.StaleStatsMinModifications.HasValue
+               || options.IdentityUsageWarningPercent.HasValue
+               || options.IdentityUsageCriticalPercent.HasValue;
+    }
+}

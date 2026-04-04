@@ -1,0 +1,18 @@
+{
+  "profile": "deep",
+  "outputFormat": "both",
+  "outputDirectory": "audit-output/deep",
+  "auditOptions": {
+    "largeTableRowThreshold": 100000,
+    "unusedIndexMinUpdates": 10000,
+    "unusedIndexMaxReads": 50,
+    "fragmentationMinPageCount": 1000,
+    "fragmentationReorganizeThresholdPercent": 10,
+    "fragmentationRebuildThresholdPercent": 30,
+    "lowPageDensityThresholdPercent": 70,
+    "staleStatsModificationPercent": 20,
+    "staleStatsMinModifications": 500,
+    "identityUsageWarningPercent": 80,
+    "identityUsageCriticalPercent": 95
+  }
+}

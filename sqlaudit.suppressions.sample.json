@@ -1,0 +1,14 @@
+{
+  "rules": [
+    {
+      "findingId": "IDX-001",
+      "databaseObjectPattern": "[dbo].[*History]",
+      "reason": "Known accepted duplication on archive tables",
+      "expiresUtc": "2027-01-01T00:00:00Z"
+    },
+    {
+      "findingId": "STAT-002-AUTO-CREATE",
+      "reason": "Controlled environment with manual stats strategy"
+    }
+  ]
+}

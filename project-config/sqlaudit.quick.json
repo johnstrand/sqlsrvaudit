@@ -1,0 +1,12 @@
+{
+  "profile": "quick",
+  "outputFormat": "both",
+  "outputDirectory": "audit-output/quick",
+  "auditOptions": {
+    "largeTableRowThreshold": 250000,
+    "unusedIndexMinUpdates": 20000,
+    "unusedIndexMaxReads": 25,
+    "identityUsageWarningPercent": 85,
+    "identityUsageCriticalPercent": 97
+  }
+}

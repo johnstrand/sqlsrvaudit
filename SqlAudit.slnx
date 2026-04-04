@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SqlAudit.Cli/SqlAudit.Cli.csproj" />
+    <Project Path="src/SqlAudit.Core/SqlAudit.Core.csproj" />
+    <Project Path="src/SqlAudit.Reporting/SqlAudit.Reporting.csproj" />
+    <Project Path="src/SqlAudit.SqlServer/SqlAudit.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SqlAudit.Tests/SqlAudit.Tests.csproj" />
+  </Folder>
+</Solution>

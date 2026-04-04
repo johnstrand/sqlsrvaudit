@@ -1,0 +1,5 @@
+bin/
+obj/
+audit-output/
+.vs/
+TestResults/
