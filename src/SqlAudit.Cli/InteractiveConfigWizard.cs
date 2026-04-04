@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
 using SqlAudit.Core.Models;
 using SqlAudit.SqlServer;
+using System.Globalization;
 
 namespace SqlAudit.Cli;
 
@@ -183,7 +179,7 @@ internal static class InteractiveConfigWizard
     private static void ToggleNumbers(string input, IReadOnlyList<CheckDescriptor> checks, HashSet<string> active)
     {
         var tokens = input
-            .Split(new[] { ',', ' ', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            .Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         if (tokens.Length == 0)
         {

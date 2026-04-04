@@ -35,7 +35,7 @@ public sealed class JsonReportRendererTests
             ]
         };
 
-        var json = new JsonReportRenderer().Render(report);
+        var json = JsonReportRenderer.Render(report);
         using var document = JsonDocument.Parse(json);
 
         var findings = document.RootElement.GetProperty("Findings");

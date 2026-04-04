@@ -1,14 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using SqlAudit.Core.Models;
+using System.Text;
 
 namespace SqlAudit.Reporting;
 
-public sealed class SqlFixScriptRenderer
+public static class SqlFixScriptRenderer
 {
-    public RenderedFixScripts Render(AuditReport report)
+    public static RenderedFixScripts Render(AuditReport report)
     {
         var individual = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var combined = new StringBuilder();

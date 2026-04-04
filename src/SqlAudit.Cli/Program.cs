@@ -1,15 +1,10 @@
-using System;
-using System.Data.Common;
-using System.IO;
-using System.Linq;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
 using SqlAudit.Cli;
 using SqlAudit.Core.Execution;
 using SqlAudit.Core.Models;
 using SqlAudit.Reporting;
 using SqlAudit.SqlServer;
+using System.Data.Common;
+using System.Diagnostics;
 
 int exitCode;
 try
@@ -102,7 +97,7 @@ static async Task<int> RunAsync(string[] args)
     };
 
     var stepPreflight = StartStep(verbosity, 2, 6, "Run connection preflight checks");
-    var preflight = await new SqlServerPreflight().RunAsync(resolved.ConnectionString, cts.Token).ConfigureAwait(false);
+    var preflight = await SqlServerPreflight.RunAsync(resolved.ConnectionString, cts.Token).ConfigureAwait(false);
     EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
 
     var stepAudit = StartStep(verbosity, 3, 6, "Run SQL Server analysis");
@@ -125,19 +120,19 @@ static async Task<int> RunAsync(string[] args)
 
     if (resolved.Format is OutputFormat.Markdown or OutputFormat.Both)
     {
-        var markdown = new MarkdownReportRenderer().Render(report);
+        var markdown = MarkdownReportRenderer.Render(report);
         await File.WriteAllTextAsync(resolved.MarkdownPath, markdown, cts.Token).ConfigureAwait(false);
     }
 
     if (resolved.Format is OutputFormat.Json or OutputFormat.Both)
     {
-        var json = new JsonReportRenderer().Render(report);
+        var json = JsonReportRenderer.Render(report);
         await File.WriteAllTextAsync(resolved.JsonPath, json, cts.Token).ConfigureAwait(false);
     }
     EndStep(verbosity, stepReports, "Report files written");
 
     var stepScripts = StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
-    var scripts = new SqlFixScriptRenderer().Render(report);
+    var scripts = SqlFixScriptRenderer.Render(report);
     var combinedPath = Path.Combine(resolved.FixesDirectory, "all-fixes.sql");
     await File.WriteAllTextAsync(combinedPath, scripts.CombinedScript, cts.Token).ConfigureAwait(false);
 

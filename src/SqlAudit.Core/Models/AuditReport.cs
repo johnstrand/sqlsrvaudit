@@ -13,7 +13,7 @@ public sealed class AuditReport
     public required string ProductVersion { get; init; }
     public required DateTimeOffset CapturedAtUtc { get; init; }
     public required IReadOnlyList<AuditFinding> Findings { get; init; }
-    public IReadOnlyList<CheckExecutionResult> CheckExecutions { get; init; } = Array.Empty<CheckExecutionResult>();
+    public IReadOnlyList<CheckExecutionResult> CheckExecutions { get; init; } = [];
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 
     public IReadOnlyDictionary<AuditSeverity, int> SeverityCounts => Findings

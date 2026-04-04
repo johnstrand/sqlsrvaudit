@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using SqlAudit.Core.Models;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using SqlAudit.Core.Models;
 
 namespace SqlAudit.Cli;
 
@@ -45,17 +41,13 @@ internal static class ReportDiffCommand
         }
 
         var json = File.ReadAllText(path);
+#pragma warning disable CA1869 // Cache and reuse 'JsonSerializerOptions' instances
         var report = JsonSerializer.Deserialize<AuditReport>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
             Converters = { new JsonStringEnumConverter() }
-        });
-
-        if (report is null)
-        {
-            throw new InvalidOperationException($"Could not parse report file: {path}");
-        }
-
+        }) ?? throw new InvalidOperationException($"Could not parse report file: {path}");
+#pragma warning restore CA1869 // Cache and reuse 'JsonSerializerOptions' instances
         return report;
     }
 
@@ -110,16 +102,16 @@ internal static class ReportDiffCommand
         Console.WriteLine($"  Regressed severity: {diff.Regressed.Count}");
         Console.WriteLine($"  Improved severity : {diff.Improved.Count}");
 
-        PrintFindingList("Top new findings", diff.NewFindings.OrderBy(f => f.Severity).Take(10).ToArray());
-        PrintFindingList("Top fixed findings", diff.FixedFindings.OrderBy(f => f.Severity).Take(10).ToArray());
+        PrintFindingList("Top new findings", [.. diff.NewFindings.OrderBy(f => f.Severity).Take(10)]);
+        PrintFindingList("Top fixed findings", [.. diff.FixedFindings.OrderBy(f => f.Severity).Take(10)]);
 
         if (diff.Regressed.Count > 0)
         {
             Console.WriteLine();
             Console.WriteLine("Regressed severity:");
-            foreach (var item in diff.Regressed.Take(10))
+            foreach (var (previous, current) in diff.Regressed.Take(10))
             {
-                Console.WriteLine($"  - {item.Current.Id} {item.Current.DatabaseObject} ({item.Previous.Severity} -> {item.Current.Severity})");
+                Console.WriteLine($"  - {current.Id} {current.DatabaseObject} ({previous.Severity} -> {current.Severity})");
             }
         }
     }

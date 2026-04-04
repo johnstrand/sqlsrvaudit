@@ -15,7 +15,7 @@ public sealed class AuditFinding
     public required string Recommendation { get; init; }
     public required ServiceWindowDecision ServiceWindow { get; init; }
     public string? FixScript { get; init; }
-    public IReadOnlyList<FindingEvidence> Evidence { get; init; } = Array.Empty<FindingEvidence>();
+    public IReadOnlyList<FindingEvidence> Evidence { get; init; } = [];
 }
 
 public sealed record FindingEvidence(string Name, string Value);

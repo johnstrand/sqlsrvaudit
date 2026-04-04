@@ -5,9 +5,9 @@ using Microsoft.Data.SqlClient;
 
 namespace SqlAudit.SqlServer;
 
-public sealed class SqlServerPreflight
+public static class SqlServerPreflight
 {
-    public async Task<SqlServerPreflightResult> RunAsync(string connectionString, CancellationToken cancellationToken)
+    public static async Task<SqlServerPreflightResult> RunAsync(string connectionString, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);

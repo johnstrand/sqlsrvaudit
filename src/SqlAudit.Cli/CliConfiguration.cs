@@ -1,13 +1,8 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.CommandLine;
 using SqlAudit.Core.Models;
 using SqlAudit.SqlServer;
+using System.CommandLine;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SqlAudit.Cli;
 
@@ -261,11 +256,10 @@ internal sealed class CliOptions
             return null;
         }
 
-        return value
+        return [.. value
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(v => !string.IsNullOrWhiteSpace(v))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+            .Distinct(StringComparer.OrdinalIgnoreCase)];
     }
 
     private static bool TryParsePreset(string? value, out ConfigPreset? preset, out string? error)
@@ -326,39 +320,40 @@ internal sealed class CliOptions
 
     private static CliParser BuildParser()
     {
-        var parser = new CliParser();
+        var parser = new CliParser
+        {
+            Connection = CreateOption<string?>("--connection", "SQL Server connection string"),
+            Config = CreateOption<string?>("--config", "Project config JSON path"),
+            Profile = CreateOption<string?>("--profile", "Check profile: quick|deep"),
+            Format = CreateOption<string?>("--format", "Report output format: markdown|json|both"),
+            Checks = CreateOption<string?>("--checks", "Comma-separated check IDs"),
+            Output = CreateOption<string?>("--output", "Output directory"),
+            Markdown = CreateOption<string?>("--markdown", "Markdown report path"),
+            Json = CreateOption<string?>("--json", "JSON report path"),
+            FixesDir = CreateOption<string?>("--fixes-dir", "Folder for SQL fix scripts"),
+            SuppressionsPathOption = CreateOption<string?>("--suppressions", "Suppressions JSON file path"),
+            NonInteractive = CreateOption<bool>("--non-interactive", "Create config without prompts"),
+            Force = CreateOption<bool>("--force", "Overwrite existing file"),
+            Verbose = CreateOption<bool>("--verbose", "Show detailed runtime output"),
+            Quiet = CreateOption<bool>("--quiet", "Show minimal runtime output"),
+            Preset = CreateOption<string?>("--preset", "Config preset: quick|deep|deep-strict"),
+            FailOn = CreateOption<string?>("--fail-on", "Exit non-zero if findings meet threshold"),
+            Previous = CreateOption<string?>("--previous", "Baseline JSON report path"),
+            Current = CreateOption<string?>("--current", "Current JSON report path"),
+            PathAlias = CreateOption<string?>("--path", "Alias for --suppressions"),
 
-        parser.Connection = CreateOption<string?>("--connection", "SQL Server connection string");
-        parser.Config = CreateOption<string?>("--config", "Project config JSON path");
-        parser.Profile = CreateOption<string?>("--profile", "Check profile: quick|deep");
-        parser.Format = CreateOption<string?>("--format", "Report output format: markdown|json|both");
-        parser.Checks = CreateOption<string?>("--checks", "Comma-separated check IDs");
-        parser.Output = CreateOption<string?>("--output", "Output directory");
-        parser.Markdown = CreateOption<string?>("--markdown", "Markdown report path");
-        parser.Json = CreateOption<string?>("--json", "JSON report path");
-        parser.FixesDir = CreateOption<string?>("--fixes-dir", "Folder for SQL fix scripts");
-        parser.SuppressionsPathOption = CreateOption<string?>("--suppressions", "Suppressions JSON file path");
-        parser.NonInteractive = CreateOption<bool>("--non-interactive", "Create config without prompts");
-        parser.Force = CreateOption<bool>("--force", "Overwrite existing file");
-        parser.Verbose = CreateOption<bool>("--verbose", "Show detailed runtime output");
-        parser.Quiet = CreateOption<bool>("--quiet", "Show minimal runtime output");
-        parser.Preset = CreateOption<string?>("--preset", "Config preset: quick|deep|deep-strict");
-        parser.FailOn = CreateOption<string?>("--fail-on", "Exit non-zero if findings meet threshold");
-        parser.Previous = CreateOption<string?>("--previous", "Baseline JSON report path");
-        parser.Current = CreateOption<string?>("--current", "Current JSON report path");
-        parser.PathAlias = CreateOption<string?>("--path", "Alias for --suppressions");
+            LargeRows = CreateOption<long?>("--large-table-rows", "Large table row threshold"),
+            UnusedMinUpdates = CreateOption<long?>("--unused-index-min-updates", "Unused index minimum updates threshold"),
+            UnusedMaxReads = CreateOption<long?>("--unused-index-max-reads", "Unused index maximum reads threshold"),
+            FragReorg = CreateOption<double?>("--frag-reorg-pct", "Fragmentation reorganize threshold percent"),
+            FragRebuild = CreateOption<double?>("--frag-rebuild-pct", "Fragmentation rebuild threshold percent"),
+            StatsModPct = CreateOption<double?>("--stats-mod-pct", "Stale statistics modification percentage"),
+            StatsMinMods = CreateOption<long?>("--stats-min-mods", "Stale statistics minimum modifications"),
+            IdentityWarn = CreateOption<double?>("--identity-warn-pct", "Identity warning threshold percentage"),
+            IdentityCritical = CreateOption<double?>("--identity-critical-pct", "Identity critical threshold percentage"),
 
-        parser.LargeRows = CreateOption<long?>("--large-table-rows", "Large table row threshold");
-        parser.UnusedMinUpdates = CreateOption<long?>("--unused-index-min-updates", "Unused index minimum updates threshold");
-        parser.UnusedMaxReads = CreateOption<long?>("--unused-index-max-reads", "Unused index maximum reads threshold");
-        parser.FragReorg = CreateOption<double?>("--frag-reorg-pct", "Fragmentation reorganize threshold percent");
-        parser.FragRebuild = CreateOption<double?>("--frag-rebuild-pct", "Fragmentation rebuild threshold percent");
-        parser.StatsModPct = CreateOption<double?>("--stats-mod-pct", "Stale statistics modification percentage");
-        parser.StatsMinMods = CreateOption<long?>("--stats-min-mods", "Stale statistics minimum modifications");
-        parser.IdentityWarn = CreateOption<double?>("--identity-warn-pct", "Identity warning threshold percentage");
-        parser.IdentityCritical = CreateOption<double?>("--identity-critical-pct", "Identity critical threshold percentage");
-
-        parser.Scan = new Command("scan", "Run SQL Server health scan and generate reports/scripts.");
+            Scan = new Command("scan", "Run SQL Server health scan and generate reports/scripts.")
+        };
         parser.Scan.Add(parser.Connection);
         parser.Scan.Add(parser.Config);
         parser.Scan.Add(parser.Profile);
@@ -382,38 +377,54 @@ internal sealed class CliOptions
         parser.Scan.Add(parser.IdentityWarn);
         parser.Scan.Add(parser.IdentityCritical);
 
-        parser.InitConfig = new Command("init-config", "Create or update project configuration.");
-        parser.InitConfig.Add(parser.Config);
-        parser.InitConfig.Add(parser.NonInteractive);
-        parser.InitConfig.Add(parser.Preset);
+        parser.InitConfig = new Command("init-config", "Create or update project configuration.")
+        {
+            parser.Config,
+            parser.NonInteractive,
+            parser.Preset
+        };
 
-        parser.SuppressionsInit = new Command("init", "Create a suppression file template.");
-        parser.SuppressionsInit.Add(parser.SuppressionsPathOption);
-        parser.SuppressionsInit.Add(parser.PathAlias);
-        parser.SuppressionsInit.Add(parser.Force);
+        parser.SuppressionsInit = new Command("init", "Create a suppression file template.")
+        {
+            parser.SuppressionsPathOption,
+            parser.PathAlias,
+            parser.Force
+        };
 
-        parser.SuppressionsValidate = new Command("validate", "Validate suppression file syntax and rules.");
-        parser.SuppressionsValidate.Add(parser.SuppressionsPathOption);
-        parser.SuppressionsValidate.Add(parser.PathAlias);
+        parser.SuppressionsValidate = new Command("validate", "Validate suppression file syntax and rules.")
+        {
+            parser.SuppressionsPathOption,
+            parser.PathAlias
+        };
 
-        parser.Suppressions = new Command("suppressions", "Manage suppression files.");
-        parser.Suppressions.Add(parser.SuppressionsInit);
-        parser.Suppressions.Add(parser.SuppressionsValidate);
+        parser.Suppressions = new Command("suppressions", "Manage suppression files.")
+        {
+            parser.SuppressionsInit,
+            parser.SuppressionsValidate
+        };
 
-        parser.ReportDiff = new Command("diff", "Compare two JSON reports.");
-        parser.ReportDiff.Add(parser.Previous);
-        parser.ReportDiff.Add(parser.Current);
-        parser.ReportDiff.Add(parser.Verbose);
-        parser.ReportDiff.Add(parser.Quiet);
+        parser.ReportDiff = new Command("diff", "Compare two JSON reports.")
+        {
+            parser.Previous,
+            parser.Current,
+            parser.Verbose,
+            parser.Quiet
+        };
 
-        parser.Report = new Command("report", "Report utilities.");
-        parser.Report.Add(parser.ReportDiff);
+        parser.Report = new Command("report", "Report utilities.")
+        {
+            parser.ReportDiff
+        };
 
-        parser.Root = new RootCommand("SQL Server schema and index health audit tool.");
-        parser.Root.Add(parser.Scan);
-        parser.Root.Add(parser.InitConfig);
-        parser.Root.Add(parser.Suppressions);
-        parser.Root.Add(parser.Report);
+#pragma warning disable IDE0028 // Simplify collection initialization
+        parser.Root = new RootCommand("SQL Server schema and index health audit tool.")
+        {
+            parser.Scan,
+            parser.InitConfig,
+            parser.Suppressions,
+            parser.Report
+        };
+#pragma warning restore IDE0028 // Simplify collection initialization
 
         return parser;
     }
@@ -632,11 +643,9 @@ internal static class ProjectConfigurationResolver
         }
 
         var json = File.ReadAllText(fullPath);
-        var config = JsonSerializer.Deserialize<ProjectConfigFile>(json, CreateSerializerOptions());
-        if (config is null)
-        {
-            throw new InvalidOperationException($"Unable to parse config file: {fullPath}");
-        }
+
+        var config = JsonSerializer.Deserialize<ProjectConfigFile>(json, CreateSerializerOptions())
+            ?? throw new InvalidOperationException($"Unable to parse config file: {fullPath}");
 
         return config;
     }

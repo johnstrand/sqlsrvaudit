@@ -1,22 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Diagnostics;
-using System.Threading;
-using System.Threading.Tasks;
 using SqlAudit.Core.Abstractions;
 using SqlAudit.Core.Models;
+using System.Diagnostics;
 
 namespace SqlAudit.Core.Execution;
 
-public sealed class HealthCheckRunner
+public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
 {
-    private readonly IReadOnlyCollection<IHealthCheck> _checks;
-
-    public HealthCheckRunner(IEnumerable<IHealthCheck> checks)
-    {
-        _checks = checks.ToArray();
-    }
+    private readonly IReadOnlyCollection<IHealthCheck> _checks = [.. checks];
 
     public async Task<HealthCheckRunResult> RunAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {

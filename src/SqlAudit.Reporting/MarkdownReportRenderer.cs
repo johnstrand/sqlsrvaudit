@@ -1,14 +1,11 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using SqlAudit.Core.Models;
+using System.Text;
 
 namespace SqlAudit.Reporting;
 
-public sealed class MarkdownReportRenderer
+public static class MarkdownReportRenderer
 {
-    public string Render(AuditReport report)
+    public static string Render(AuditReport report)
     {
         var sb = new StringBuilder();
         sb.AppendLine("# SQL Audit Health Report");

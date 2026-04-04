@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using SqlAudit.Core.Abstractions;
 using SqlAudit.Core.Models;
 using SqlAudit.SqlServer.Checks;
@@ -39,7 +36,7 @@ public static class SqlServerHealthChecks
 
         if (activeCheckIds is null || activeCheckIds.Count == 0)
         {
-            return eligible.Select(r => r.Factory()).ToArray();
+            return [.. eligible.Select(r => r.Factory())];
         }
 
         var active = activeCheckIds
@@ -47,10 +44,9 @@ public static class SqlServerHealthChecks
             .Select(id => id.Trim())
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        return eligible
+        return [.. eligible
             .Where(r => active.Contains(r.Id))
-            .Select(r => r.Factory())
-            .ToArray();
+            .Select(r => r.Factory())];
     }
 
     public static IReadOnlyCollection<IHealthCheck> CreateDefault() => CreateDeep();
@@ -61,14 +57,13 @@ public static class SqlServerHealthChecks
 
     public static IReadOnlyList<CheckDescriptor> GetDescriptors(AuditProfile profile)
     {
-        return Registrations
+        return [.. Registrations
             .Where(r => IsProfileEnabled(r, profile))
             .Select(r =>
             {
                 var check = r.Factory();
                 return new CheckDescriptor(check.Id, check.Title, check.Category, r.QuickEnabled, r.DeepEnabled);
-            })
-            .ToArray();
+            })];
     }
 
     private static bool IsProfileEnabled(CheckRegistration registration, AuditProfile profile)

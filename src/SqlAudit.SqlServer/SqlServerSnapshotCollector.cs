@@ -1,15 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 using SqlAudit.Core.Models;
+using System.Globalization;
 
 namespace SqlAudit.SqlServer;
 
 public sealed class SqlServerSnapshotCollector
 {
-    public async Task<DatabaseSnapshot> CollectAsync(string connectionString, AuditProfile profile, CancellationToken cancellationToken)
+    public static async Task<DatabaseSnapshot> CollectAsync(string connectionString, AuditProfile profile, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -32,11 +29,11 @@ public sealed class SqlServerSnapshotCollector
             IndexUsage = await ReadIndexUsageAsync(connection, cancellationToken).ConfigureAwait(false),
             IndexPhysicalStats = includePhysical
                 ? await ReadIndexPhysicalStatsAsync(connection, cancellationToken).ConfigureAwait(false)
-                : Array.Empty<IndexPhysicalInfo>(),
+                : [],
             ForeignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false),
             Statistics = includeStatistics
                 ? await ReadStatisticsAsync(connection, cancellationToken).ConfigureAwait(false)
-                : Array.Empty<StatisticsInfo>(),
+                : [],
             IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false)
         };
     }
@@ -655,7 +652,13 @@ internal static class SqlRead
         {
             DateTimeOffset dto => dto,
             DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc)),
-            _ => DateTimeOffset.TryParse(Convert.ToString(value), out var parsed) ? parsed : null
+            _ => DateTimeOffset.TryParse(
+                Convert.ToString(value),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AssumeUniversal,
+                out var parsed)
+                ? parsed
+                : null
         };
     }
 }

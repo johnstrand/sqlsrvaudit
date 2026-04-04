@@ -1,24 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using SqlAudit.Core.Abstractions;
 using SqlAudit.Core.Execution;
 using SqlAudit.Core.Models;
 
 namespace SqlAudit.SqlServer;
 
-public sealed class SqlServerAuditor
+public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
 {
-    private readonly SqlServerSnapshotCollector _snapshotCollector;
-    private readonly IReadOnlyCollection<IHealthCheck>? _customChecks;
-
-    public SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
-    {
-        _snapshotCollector = new SqlServerSnapshotCollector();
-        _customChecks = checks?.ToArray();
-    }
+    private readonly IReadOnlyCollection<IHealthCheck>? _customChecks = checks?.ToArray();
 
     public async Task<AuditReport> RunAsync(
         string connectionString,
@@ -26,7 +14,7 @@ public sealed class SqlServerAuditor
         AuditProfile profile = AuditProfile.Deep,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = await _snapshotCollector.CollectAsync(connectionString, profile, cancellationToken).ConfigureAwait(false);
+        var snapshot = await SqlServerSnapshotCollector.CollectAsync(connectionString, profile, cancellationToken).ConfigureAwait(false);
         var runner = new HealthCheckRunner(_customChecks ?? SqlServerHealthChecks.Create(profile));
 
         var context = new HealthCheckContext
@@ -44,14 +32,11 @@ public sealed class SqlServerAuditor
             Edition = snapshot.Edition,
             ProductVersion = snapshot.ProductVersion,
             CapturedAtUtc = DateTimeOffset.UtcNow,
-            Findings = runResult.Findings
+            Findings = [.. runResult.Findings
                 .OrderBy(f => f.Severity)
                 .ThenBy(f => f.Category, StringComparer.Ordinal)
-                .ThenBy(f => f.DatabaseObject, StringComparer.Ordinal)
-                .ToArray(),
-            CheckExecutions = runResult.CheckExecutions
-                .OrderBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase)
-                .ToArray(),
+                .ThenBy(f => f.DatabaseObject, StringComparer.Ordinal)],
+            CheckExecutions = [.. runResult.CheckExecutions.OrderBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase)],
             SuppressionSummary = new SuppressionSummary(0, 0, 0, 0, runResult.Findings.Count)
         };
     }

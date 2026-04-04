@@ -329,6 +329,7 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
             var indexes = tableIndexes.ToArray();
             for (var i = 0; i < indexes.Length; i++)
             {
+                var foundCoverage = false;
                 for (var j = 0; j < indexes.Length; j++)
                 {
                     if (i == j)
@@ -381,11 +382,15 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
                         ]
                     });
 
-                    goto NextIndex;
+                    foundCoverage = true;
+                    break;
+                }
+
+                if (foundCoverage)
+                {
+                    continue;
                 }
             }
-
-            NextIndex:;
         }
 
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);

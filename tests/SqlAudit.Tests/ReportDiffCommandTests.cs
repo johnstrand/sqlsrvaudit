@@ -34,7 +34,7 @@ public sealed class ReportDiffCommandTests
             ProductVersion = "16.0",
             CapturedAtUtc = DateTimeOffset.UtcNow,
             Findings = findings,
-            CheckExecutions = Array.Empty<CheckExecutionResult>(),
+            CheckExecutions = [],
             SuppressionSummary = SuppressionSummary.None
         };
     }

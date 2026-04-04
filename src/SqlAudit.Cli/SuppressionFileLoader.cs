@@ -1,9 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.IO;
-using System.Text.Json;
 using SqlAudit.Core.Models;
+using System.Globalization;
+using System.Text.Json;
 
 namespace SqlAudit.Cli;
 
@@ -15,7 +12,7 @@ internal static class SuppressionFileLoader
     {
         if (string.IsNullOrWhiteSpace(filePath))
         {
-            return Array.Empty<AuditSuppressionRule>();
+            return [];
         }
 
         var parsed = Parse(Path.GetFullPath(filePath), strict: true);
@@ -123,7 +120,9 @@ internal static class SuppressionFileLoader
         string fullPath,
         bool strict,
         IReadOnlyList<AuditSuppressionRule> rules,
+#pragma warning disable CA1859 // Use concrete types when possible for improved performance
         IReadOnlyList<string> errors,
+#pragma warning restore CA1859 // Use concrete types when possible for improved performance
         IReadOnlyList<string> warnings)
     {
         if (strict && errors.Count > 0)
