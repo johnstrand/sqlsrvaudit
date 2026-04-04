@@ -18,6 +18,10 @@ public sealed class AuditReport
 
     public IReadOnlyList<CheckExecutionResult> CheckExecutions { get; init; } = [];
 
+    public IReadOnlyList<string> ExcludedSchemas { get; init; } = [];
+
+    public IReadOnlyList<string> ExcludedTables { get; init; } = [];
+
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 
     public IReadOnlyDictionary<AuditSeverity, int> SeverityCounts => Findings

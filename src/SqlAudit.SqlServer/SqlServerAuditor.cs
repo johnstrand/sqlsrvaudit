@@ -12,9 +12,13 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         string connectionString,
         AuditOptions? options = null,
         AuditProfile profile = AuditProfile.Deep,
+        IReadOnlyCollection<string>? excludedSchemas = null,
+        IReadOnlyCollection<string>? excludedTables = null,
         CancellationToken cancellationToken = default)
     {
-        var snapshot = await SqlServerSnapshotCollector.CollectAsync(connectionString, profile, cancellationToken).ConfigureAwait(false);
+        var snapshot = await SqlServerSnapshotCollector
+            .CollectAsync(connectionString, profile, excludedSchemas, excludedTables, cancellationToken)
+            .ConfigureAwait(false);
         var runner = new HealthCheckRunner(customChecks ?? SqlServerHealthChecks.Create(profile));
 
         var context = new HealthCheckContext
@@ -24,6 +28,8 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         };
 
         var runResult = await runner.RunAsync(context, cancellationToken).ConfigureAwait(false);
+        var excludedSchemaList = excludedSchemas?.ToArray() ?? [];
+        var excludedTableList = excludedTables?.ToArray() ?? [];
 
         return new AuditReport
         {
@@ -32,6 +38,8 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
             Edition = snapshot.Edition,
             ProductVersion = snapshot.ProductVersion,
             CapturedAtUtc = DateTimeOffset.UtcNow,
+            ExcludedSchemas = excludedSchemaList,
+            ExcludedTables = excludedTableList,
             Findings = [.. runResult.Findings
                 .OrderBy(f => f.Severity)
                 .ThenBy(f => f.Category, StringComparer.Ordinal)

@@ -76,6 +76,8 @@ internal static class InteractiveConfigWizard
             JsonPath = existing?.JsonPath,
             FixesDirectory = existing?.FixesDirectory,
             SuppressionsPath = existing?.SuppressionsPath,
+            ExcludeSchemas = existing?.ExcludeSchemas,
+            ExcludeTables = existing?.ExcludeTables,
             ActiveCheckIds = useDefaultCheckSet
                 ? null
                 : checks.Where(c => active.Contains(c.Id)).Select(c => c.Id).ToArray(),

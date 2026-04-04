@@ -6,7 +6,12 @@ namespace SqlAudit.SqlServer;
 
 public sealed class SqlServerSnapshotCollector
 {
-    public static async Task<DatabaseSnapshot> CollectAsync(string connectionString, AuditProfile profile, CancellationToken cancellationToken)
+    public static async Task<DatabaseSnapshot> CollectAsync(
+        string connectionString,
+        AuditProfile profile,
+        IReadOnlyCollection<string>? excludedSchemas,
+        IReadOnlyCollection<string>? excludedTables,
+        CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
@@ -15,7 +20,7 @@ public sealed class SqlServerSnapshotCollector
         var includePhysical = profile == AuditProfile.Deep;
         var includeStatistics = profile == AuditProfile.Deep;
 
-        return new DatabaseSnapshot
+        var snapshot = new DatabaseSnapshot
         {
             ServerName = serverInfo.ServerName,
             DatabaseName = serverInfo.DatabaseName,
@@ -37,6 +42,94 @@ public sealed class SqlServerSnapshotCollector
                 : [],
             IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false),
         };
+
+        return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
+    }
+
+    private static DatabaseSnapshot ApplyExclusions(
+        DatabaseSnapshot snapshot,
+        IReadOnlyCollection<string>? excludedSchemas,
+        IReadOnlyCollection<string>? excludedTables)
+    {
+        var excludedSchemaSet = excludedSchemas?
+            .Where(schema => !string.IsNullOrWhiteSpace(schema))
+            .Select(schema => schema.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var excludedTableSet = excludedTables?
+            .Where(table => !string.IsNullOrWhiteSpace(table))
+            .Select(table => table.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        if ((excludedSchemaSet is null || excludedSchemaSet.Count == 0)
+            && (excludedTableSet is null || excludedTableSet.Count == 0))
+        {
+            return snapshot;
+        }
+
+        var tables = snapshot.Tables
+            .Where(table => !IsExcludedTable(table, excludedSchemaSet, excludedTableSet))
+            .ToArray();
+        var tableIds = tables
+            .Select(table => table.ObjectId)
+            .ToHashSet();
+
+        var indexes = snapshot.Indexes
+            .Where(index => tableIds.Contains(index.ObjectId))
+            .ToArray();
+        var indexKeys = indexes
+            .Select(index => (index.ObjectId, index.IndexId))
+            .ToHashSet();
+
+        return new DatabaseSnapshot
+        {
+            ServerName = snapshot.ServerName,
+            DatabaseName = snapshot.DatabaseName,
+            Edition = snapshot.Edition,
+            ProductVersion = snapshot.ProductVersion,
+            CompatibilityLevel = snapshot.CompatibilityLevel,
+            IsAzureSql = snapshot.IsAzureSql,
+            AutoCreateStatisticsOn = snapshot.AutoCreateStatisticsOn,
+            AutoUpdateStatisticsOn = snapshot.AutoUpdateStatisticsOn,
+            Tables = tables,
+            Indexes = indexes,
+            IndexUsage = snapshot.IndexUsage
+                .Where(usage => indexKeys.Contains((usage.ObjectId, usage.IndexId)))
+                .ToArray(),
+            IndexPhysicalStats = snapshot.IndexPhysicalStats
+                .Where(stat => indexKeys.Contains((stat.ObjectId, stat.IndexId)))
+                .ToArray(),
+            ForeignKeys = snapshot.ForeignKeys
+                .Where(foreignKey =>
+                    !IsExcludedTable(foreignKey.ParentSchema, foreignKey.ParentTable, excludedSchemaSet, excludedTableSet)
+                    && !IsExcludedTable(foreignKey.ReferencedSchema, foreignKey.ReferencedTable, excludedSchemaSet, excludedTableSet))
+                .ToArray(),
+            Statistics = snapshot.Statistics
+                .Where(stat => tableIds.Contains(stat.ObjectId))
+                .ToArray(),
+            IdentityColumns = snapshot.IdentityColumns
+                .Where(identity => tableIds.Contains(identity.ObjectId))
+                .ToArray(),
+        };
+    }
+
+    private static bool IsExcludedTable(
+        TableInfo table,
+        IReadOnlySet<string>? excludedSchemaSet,
+        IReadOnlySet<string>? excludedTableSet)
+    {
+        return IsExcludedTable(table.SchemaName, table.TableName, excludedSchemaSet, excludedTableSet);
+    }
+
+    private static bool IsExcludedTable(
+        string schemaName,
+        string tableName,
+        IReadOnlySet<string>? excludedSchemaSet,
+        IReadOnlySet<string>? excludedTableSet)
+    {
+        return (excludedSchemaSet is not null && excludedSchemaSet.Contains(schemaName))
+               || (excludedTableSet is not null
+                   && (excludedTableSet.Contains(tableName)
+                       || excludedTableSet.Contains($"{schemaName}.{tableName}")));
     }
 
     private static async Task<ServerInfo> ReadServerInfoAsync(SqlConnection connection, CancellationToken cancellationToken)

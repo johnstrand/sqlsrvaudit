@@ -20,6 +20,8 @@ public sealed class ProjectConfigurationResolverTests
                 profile = "quick",
                 outputFormat = "json",
                 outputDirectory = "./out-from-config",
+                excludeSchemas = new[] { "archive", "ARCHIVE", " " },
+                excludeTables = new[] { "Book_Backup", "dbo.Book_Backup", "Book_Backup", " " },
                 auditOptions = new
                 {
                     staleStatsMinModifications = 222,
@@ -53,6 +55,13 @@ public sealed class ProjectConfigurationResolverTests
             Assert.Equal(999, resolved.AuditOptions.StaleStatsMinModifications);
             Assert.Equal(91, resolved.AuditOptions.IdentityUsageWarningPercent);
             Assert.Contains("out-from-config", resolved.OutputDirectory, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(resolved.ExcludeSchemas);
+            Assert.Single(resolved.ExcludeSchemas!);
+            Assert.Equal("archive", resolved.ExcludeSchemas![0], ignoreCase: true);
+            Assert.NotNull(resolved.ExcludeTables);
+            Assert.Equal(2, resolved.ExcludeTables!.Count);
+            Assert.Contains("Book_Backup", resolved.ExcludeTables, StringComparer.OrdinalIgnoreCase);
+            Assert.Contains("dbo.Book_Backup", resolved.ExcludeTables, StringComparer.OrdinalIgnoreCase);
         }
         finally
         {

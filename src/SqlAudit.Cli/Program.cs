@@ -141,6 +141,14 @@ static void PrintRunConfiguration(LogVerbosity verbosity, EffectiveRunOptions re
     PrintLine(verbosity, LogVerbosity.Normal, $"  Active checks: {activeChecks}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output dir   : {resolved.OutputDirectory}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Suppressions : {resolved.SuppressionsPath ?? "(none)"}");
+    PrintLine(
+        verbosity,
+        LogVerbosity.Normal,
+        $"  Excluded schemas: {(resolved.ExcludeSchemas is null ? "(none)" : string.Join(", ", resolved.ExcludeSchemas))}");
+    PrintLine(
+        verbosity,
+        LogVerbosity.Normal,
+        $"  Excluded tables : {(resolved.ExcludeTables is null ? "(none)" : string.Join(", ", resolved.ExcludeTables))}");
 }
 
 static CancellationTokenSource CreateCancellationTokenSource()
@@ -176,6 +184,8 @@ static async Task<AuditReport> RunAuditAsync(
             resolved.ConnectionString,
             resolved.AuditOptions,
             resolved.Profile,
+            resolved.ExcludeSchemas,
+            resolved.ExcludeTables,
             cancellationToken)
         .ConfigureAwait(false);
 
@@ -312,6 +322,8 @@ static AuditReport ApplySuppressionResult(AuditReport source, SuppressionOutcome
         Edition = source.Edition,
         ProductVersion = source.ProductVersion,
         CapturedAtUtc = source.CapturedAtUtc,
+        ExcludedSchemas = source.ExcludedSchemas,
+        ExcludedTables = source.ExcludedTables,
         Findings = suppression.Findings,
         CheckExecutions = source.CheckExecutions,
         SuppressionSummary = suppression.Summary,

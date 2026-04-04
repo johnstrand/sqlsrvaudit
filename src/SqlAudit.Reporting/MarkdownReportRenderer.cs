@@ -10,6 +10,7 @@ public static class MarkdownReportRenderer
         var sb = new StringBuilder();
 
         WriteHeader(sb, report);
+        WriteExclusions(sb, report);
         WriteScorecard(sb, report);
         WriteCategories(sb, report);
         WriteSuppressions(sb, report);
@@ -50,6 +51,15 @@ public static class MarkdownReportRenderer
         sb.AppendLine();
     }
 
+    private static void WriteExclusions(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Exclusions");
+        sb.AppendLine();
+        sb.AppendLine($"- Schemas: {FormatExclusionList(report.ExcludedSchemas)}");
+        sb.AppendLine($"- Tables: {FormatExclusionList(report.ExcludedTables)}");
+        sb.AppendLine();
+    }
+
     private static void WriteCategories(StringBuilder sb, AuditReport report)
     {
         sb.AppendLine("### Categories");
@@ -84,6 +94,10 @@ public static class MarkdownReportRenderer
             return;
         }
 
+        var ruleIdsWithFindings = report.Findings
+            .Select(finding => GetRuleId(finding.Id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
         sb.AppendLine("### Check Execution");
         sb.AppendLine();
         sb.AppendLine("| Check Id | Status | Duration (ms) | Findings | Title |");
@@ -91,7 +105,10 @@ public static class MarkdownReportRenderer
 
         foreach (var check in report.CheckExecutions.OrderByDescending(c => c.DurationMs).ThenBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase))
         {
-            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {EscapeInline(check.CheckId)} | {check.Status} | {check.DurationMs} | {check.FindingCount} | {EscapeInline(check.Title)} |");
+            var checkId = ruleIdsWithFindings.Contains(check.CheckId)
+                ? $"[{EscapeInline(check.CheckId)}](#{BuildRuleAnchorId(check.CheckId)})"
+                : EscapeInline(check.CheckId);
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {checkId} | {check.Status} | {check.DurationMs} | {check.FindingCount} | {EscapeInline(check.Title)} |");
         }
 
         sb.AppendLine();
@@ -175,15 +192,41 @@ public static class MarkdownReportRenderer
         sb.AppendLine("## Findings");
         sb.AppendLine();
 
-        foreach (var finding in report.Findings)
+        var checkTitlesById = report.CheckExecutions
+            .ToDictionary(check => check.CheckId, check => check.Title, StringComparer.OrdinalIgnoreCase);
+        var groups = report.Findings
+            .GroupBy(finding => GetRuleId(finding.Id), StringComparer.OrdinalIgnoreCase)
+            .Select(group => new RuleFindingGroup(
+                group.Key,
+                checkTitlesById.TryGetValue(group.Key, out var title) ? title : null,
+                [.. group
+                    .OrderBy(finding => finding.Severity)
+                    .ThenBy(finding => finding.Category, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(finding => finding.DatabaseObject, StringComparer.OrdinalIgnoreCase)]))
+            .OrderBy(group => group.Findings[0].Severity)
+            .ThenBy(group => group.RuleId, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        foreach (var group in groups)
         {
-            WriteFindingSection(sb, finding);
+            var heading = string.IsNullOrWhiteSpace(group.Title)
+                ? $"### Rule `{EscapeInline(group.RuleId)}` ({group.Findings.Count})"
+                : $"### Rule `{EscapeInline(group.RuleId)}` - {EscapeInline(group.Title)} ({group.Findings.Count})";
+
+            sb.AppendLine($"<a id=\"{BuildRuleAnchorId(group.RuleId)}\"></a>");
+            sb.AppendLine(heading);
+            sb.AppendLine();
+
+            foreach (var finding in group.Findings)
+            {
+                WriteFindingSection(sb, finding);
+            }
         }
     }
 
     private static void WriteFindingSection(StringBuilder sb, AuditFinding finding)
     {
-        sb.AppendLine($"### [{finding.Severity}] {EscapeInline(finding.Title)}");
+        sb.AppendLine($"#### [{finding.Severity}] {EscapeInline(finding.Title)}");
         sb.AppendLine();
         sb.AppendLine($"- Id: `{EscapeInline(finding.Id)}`");
         sb.AppendLine($"- Category: `{EscapeInline(finding.Category)}`");
@@ -215,6 +258,62 @@ public static class MarkdownReportRenderer
     }
 
     private static string EscapeInline(string input) => input.Replace("|", "\\|", StringComparison.Ordinal);
+
+    private static string FormatExclusionList(IReadOnlyList<string> values)
+    {
+        if (values.Count == 0)
+        {
+            return "(none)";
+        }
+
+        return string.Join(", ", values.Select(value => $"`{EscapeInline(value)}`"));
+    }
+
+    private static string GetRuleId(string findingId)
+    {
+        const string failurePrefix = "CHECK-FAIL-";
+        var candidate = findingId.StartsWith(failurePrefix, StringComparison.OrdinalIgnoreCase)
+            ? findingId[failurePrefix.Length..]
+            : findingId;
+
+        var parts = candidate.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        for (var i = 1; i < parts.Length; i++)
+        {
+            if (int.TryParse(parts[i], out _))
+            {
+                return $"{parts[i - 1]}-{parts[i]}";
+            }
+        }
+
+        return candidate;
+    }
+
+    private static string BuildRuleAnchorId(string ruleId)
+    {
+        var fragment = new StringBuilder(ruleId.Length);
+        var previousDash = false;
+        foreach (var ch in ruleId.ToLowerInvariant())
+        {
+            if (char.IsLetterOrDigit(ch))
+            {
+                fragment.Append(ch);
+                previousDash = false;
+                continue;
+            }
+
+            if (previousDash)
+            {
+                continue;
+            }
+
+            fragment.Append('-');
+            previousDash = true;
+        }
+
+        return $"rule-{fragment.ToString().Trim('-')}";
+    }
+
+    private sealed record RuleFindingGroup(string RuleId, string? Title, IReadOnlyList<AuditFinding> Findings);
 
     private static int Score(AuditSeverity severity) => severity switch
     {

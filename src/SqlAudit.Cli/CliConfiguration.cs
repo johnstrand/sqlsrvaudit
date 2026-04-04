@@ -722,6 +722,10 @@ internal sealed class ProjectConfigFile
 
     public string? SuppressionsPath { get; init; }
 
+    public IReadOnlyList<string>? ExcludeSchemas { get; init; }
+
+    public IReadOnlyList<string>? ExcludeTables { get; init; }
+
     public IReadOnlyList<string>? ActiveCheckIds { get; init; }
 
     public AuditOptionsOverrides? AuditOptions { get; init; }
@@ -744,6 +748,10 @@ internal sealed class EffectiveRunOptions
     public required string FixesDirectory { get; init; }
 
     public required string? SuppressionsPath { get; init; }
+
+    public required IReadOnlyList<string>? ExcludeSchemas { get; init; }
+
+    public required IReadOnlyList<string>? ExcludeTables { get; init; }
 
     public required LogVerbosity Verbosity { get; init; }
 
@@ -777,6 +785,8 @@ internal static class ProjectConfigurationResolver
 
         var activeCheckIds = cliOptions.ActiveCheckIds ?? config?.ActiveCheckIds;
         ValidateCheckIds(profile, activeCheckIds);
+        var excludeSchemas = NormalizeSchemaList(config?.ExcludeSchemas);
+        var excludeTables = NormalizeTableList(config?.ExcludeTables);
 
         var format = cliOptions.OutputFormat ?? config?.OutputFormat ?? OutputFormat.Both;
         var outputDir = Path.GetFullPath(cliOptions.OutputDirectory ?? config?.OutputDirectory ?? "audit-output");
@@ -792,6 +802,8 @@ internal static class ProjectConfigurationResolver
             JsonPath = Path.GetFullPath(cliOptions.JsonPath ?? config?.JsonPath ?? Path.Combine(outputDir, "report.json")),
             FixesDirectory = Path.GetFullPath(cliOptions.FixesDirectory ?? config?.FixesDirectory ?? Path.Combine(outputDir, "fixes")),
             SuppressionsPath = suppressionsPath,
+            ExcludeSchemas = excludeSchemas,
+            ExcludeTables = excludeTables,
             Verbosity = cliOptions.Verbosity,
             FailOnSeverity = cliOptions.FailOnSeverity,
             ActiveCheckIds = activeCheckIds,
@@ -906,5 +918,31 @@ internal static class ProjectConfigurationResolver
 
         throw new InvalidOperationException(
             $"Invalid check id(s) for profile '{profile}': {string.Join(", ", invalid)}.");
+    }
+
+    private static IReadOnlyList<string>? NormalizeSchemaList(IReadOnlyList<string>? schemas)
+    {
+        return NormalizeStringList(schemas);
+    }
+
+    private static IReadOnlyList<string>? NormalizeTableList(IReadOnlyList<string>? tables)
+    {
+        return NormalizeStringList(tables);
+    }
+
+    private static IReadOnlyList<string>? NormalizeStringList(IReadOnlyList<string>? values)
+    {
+        if (values is null || values.Count == 0)
+        {
+            return null;
+        }
+
+        var normalized = values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return normalized.Length == 0 ? null : normalized;
     }
 }

@@ -75,6 +75,15 @@ dotnet run --project src/SqlAudit.Cli -- scan --config "project-config/sqlaudit.
 `--profile`, `--format`, and threshold CLI switches override values from config files.
 Non-interactive presets: `quick`, `deep`, `deep-strict`.
 
+You can ignore specific schemas/tables in config with `excludeSchemas` and `excludeTables`, for example:
+
+```json
+{
+  "excludeSchemas": ["archive", "etl_staging"],
+  "excludeTables": ["Book_Backup", "dbo.Legacy_Book_Backup"]
+}
+```
+
 ## Suppressions
 
 You can suppress known findings with a JSON file and keep reports focused on actionable issues.
