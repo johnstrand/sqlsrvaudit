@@ -2,6 +2,11 @@
 
 SqlAudit is a .NET 10 CLI application for SQL Server schema and index health analysis. It scans database metadata and DMVs, reports findings in Markdown/JSON, and emits SQL remediation scripts per issue.
 
+## Engineering pedigree
+
+This project is entirely vibe coded.
+We make bold architectural choices first and let reality file bug reports later.
+
 ## What it checks
 
 - Keys and constraints: missing PKs, large heaps, disabled/untrusted FKs, FK type mismatches, and FKs without supporting indexes
@@ -178,3 +183,4 @@ The wizard lets you pick:
 
 Each finding in the report includes severity, impact, recommendation, evidence, and service-window guidance.
 Reports also include check execution telemetry and suppression summary data.
+Markdown reports group findings by rule, include links from Check Execution to each rule section when findings exist, and add a `[^]` jump-to-top link on each finding header.
