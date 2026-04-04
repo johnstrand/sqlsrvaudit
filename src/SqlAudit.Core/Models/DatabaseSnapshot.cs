@@ -1,23 +1,33 @@
-using System;
-using System.Collections.Generic;
-
 namespace SqlAudit.Core.Models;
 
 public sealed class DatabaseSnapshot
 {
     public required string ServerName { get; init; }
+
     public required string DatabaseName { get; init; }
+
     public required string Edition { get; init; }
+
     public required string ProductVersion { get; init; }
+
     public required bool IsAzureSql { get; init; }
+
     public required bool AutoCreateStatisticsOn { get; init; }
+
     public required bool AutoUpdateStatisticsOn { get; init; }
+
     public required IReadOnlyList<TableInfo> Tables { get; init; }
+
     public required IReadOnlyList<IndexInfo> Indexes { get; init; }
+
     public required IReadOnlyList<IndexUsageInfo> IndexUsage { get; init; }
+
     public required IReadOnlyList<IndexPhysicalInfo> IndexPhysicalStats { get; init; }
+
     public required IReadOnlyList<ForeignKeyInfo> ForeignKeys { get; init; }
+
     public required IReadOnlyList<StatisticsInfo> Statistics { get; init; }
+
     public required IReadOnlyList<IdentityColumnInfo> IdentityColumns { get; init; }
 }
 

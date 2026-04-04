@@ -87,7 +87,7 @@ static async Task<int> RunAsync(string[] args)
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output format: {resolved.Format.ToString().ToLowerInvariant()}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Active checks: {checks.Count}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output dir   : {resolved.OutputDirectory}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Suppressions : {(resolved.SuppressionsPath ?? "(none)")}");
+    PrintLine(verbosity, LogVerbosity.Normal, $"  Suppressions : {resolved.SuppressionsPath ?? "(none)"}");
 
     using var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, eventArgs) =>
@@ -129,6 +129,7 @@ static async Task<int> RunAsync(string[] args)
         var json = JsonReportRenderer.Render(report);
         await File.WriteAllTextAsync(resolved.JsonPath, json, cts.Token).ConfigureAwait(false);
     }
+
     EndStep(verbosity, stepReports, "Report files written");
 
     var stepScripts = StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
@@ -140,6 +141,7 @@ static async Task<int> RunAsync(string[] args)
     {
         await File.WriteAllTextAsync(Path.Combine(resolved.FixesDirectory, script.Key), script.Value, cts.Token).ConfigureAwait(false);
     }
+
     EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.IndividualScripts.Count} individual scripts)");
 
     var requiringWindow = report.Findings.Count(f => f.ServiceWindow.RequiresServiceWindow);
@@ -155,10 +157,12 @@ static async Task<int> RunAsync(string[] args)
     {
         Console.WriteLine($"  Severity {severity.Key,-9}: {severity.Value}");
     }
+
     foreach (var category in report.CategoryCounts.OrderByDescending(kvp => kvp.Value).ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
     {
         Console.WriteLine($"  Category {category.Key,-9}: {category.Value}");
     }
+
     Console.WriteLine($"  Suppressed findings : {report.SuppressionSummary.SuppressedFindings}");
     Console.WriteLine($"  Suppression rules   : {report.SuppressionSummary.ActiveRules} active, {report.SuppressionSummary.ExpiredRules} expired");
     Console.WriteLine($"  Duration            : {runTimer.Elapsed:hh\\:mm\\:ss}");
@@ -216,7 +220,7 @@ static AuditReport ApplySuppressionResult(AuditReport source, SuppressionOutcome
         CapturedAtUtc = source.CapturedAtUtc,
         Findings = suppression.Findings,
         CheckExecutions = source.CheckExecutions,
-        SuppressionSummary = suppression.Summary
+        SuppressionSummary = suppression.Summary,
     };
 }
 
@@ -239,7 +243,7 @@ static void PrintCheckExecutions(IReadOnlyList<CheckExecutionResult> executions,
         {
             CheckExecutionStatus.Success => "success",
             CheckExecutionStatus.Failed => "failed",
-            _ => "skipped"
+            _ => "skipped",
         };
 
         Console.WriteLine($"  {statusText,-7}  {execution.DurationMs,7}ms  {execution.FindingCount,8}  {execution.CheckId,-10}  {execution.Title}");

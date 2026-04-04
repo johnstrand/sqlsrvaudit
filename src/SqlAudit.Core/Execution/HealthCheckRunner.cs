@@ -6,14 +6,14 @@ namespace SqlAudit.Core.Execution;
 
 public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
 {
-    private readonly IReadOnlyCollection<IHealthCheck> _checks = [.. checks];
+    private readonly IReadOnlyCollection<IHealthCheck> checks = [.. checks];
 
     public async Task<HealthCheckRunResult> RunAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var findings = new List<AuditFinding>();
         var executions = new List<CheckExecutionResult>();
 
-        foreach (var check in _checks)
+        foreach (var check in checks)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var timer = Stopwatch.StartNew();
@@ -30,7 +30,7 @@ public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
                     CheckExecutionStatus.Success,
                     timer.ElapsedMilliseconds,
                     current.Count,
-                    null));
+                    ErrorMessage: null));
             }
             catch (Exception ex)
             {
@@ -46,7 +46,7 @@ public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
                     Impact = "Some findings may be missing or incomplete.",
                     Recommendation = "Review stack details and retry the scan.",
                     ServiceWindow = ServiceWindowAdvisor.No("Diagnostic only, no schema change required."),
-                    Evidence = [new FindingEvidence("Error", ex.Message)]
+                    Evidence = [new FindingEvidence("Error", ex.Message)],
                 });
 
                 executions.Add(new CheckExecutionResult(

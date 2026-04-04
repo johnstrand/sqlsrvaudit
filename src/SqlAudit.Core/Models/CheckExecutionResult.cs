@@ -4,7 +4,7 @@ public enum CheckExecutionStatus
 {
     Success,
     Failed,
-    Skipped
+    Skipped,
 }
 
 public sealed record CheckExecutionResult(

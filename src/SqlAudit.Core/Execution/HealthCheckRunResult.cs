@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using SqlAudit.Core.Models;
 
 namespace SqlAudit.Core.Execution;

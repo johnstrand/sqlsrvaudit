@@ -35,7 +35,7 @@ public sealed class ReportDiffCommandTests
             CapturedAtUtc = DateTimeOffset.UtcNow,
             Findings = findings,
             CheckExecutions = [],
-            SuppressionSummary = SuppressionSummary.None
+            SuppressionSummary = SuppressionSummary.None,
         };
     }
 
@@ -51,7 +51,7 @@ public sealed class ReportDiffCommandTests
             Description = "desc",
             Impact = "impact",
             Recommendation = "rec",
-            ServiceWindow = ServiceWindowAdvisor.No("none")
+            ServiceWindow = ServiceWindowAdvisor.No("none"),
         };
     }
 }

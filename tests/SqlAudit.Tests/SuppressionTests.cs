@@ -12,12 +12,12 @@ public sealed class SuppressionTests
         {
             CreateFinding("IDX-001-10", "[dbo].[Orders]"),
             CreateFinding("IDX-001-11", "[dbo].[ArchiveOrders]"),
-            CreateFinding("FK-002-1", "[dbo].[OrderItems]")
+            CreateFinding("FK-002-1", "[dbo].[OrderItems]"),
         };
 
         var rules = new[]
         {
-            new AuditSuppressionRule("IDX-001", "[dbo].[*Orders]", "known", null)
+            new AuditSuppressionRule("IDX-001", "[dbo].[*Orders]", "known", ExpiresUtc: null),
         };
 
         var outcome = AuditFindingSuppressor.Apply(findings, rules, DateTimeOffset.UtcNow);
@@ -33,12 +33,12 @@ public sealed class SuppressionTests
     {
         var findings = new[]
         {
-            CreateFinding("IDX-004-1", "[dbo].[Orders]")
+            CreateFinding("IDX-004-1", "[dbo].[Orders]"),
         };
 
         var rules = new[]
         {
-            new AuditSuppressionRule("IDX-004", null, null, DateTimeOffset.UtcNow.AddDays(-1))
+            new AuditSuppressionRule("IDX-004", DatabaseObjectPattern: null, Reason: null, DateTimeOffset.UtcNow.AddDays(-1)),
         };
 
         var outcome = AuditFindingSuppressor.Apply(findings, rules, DateTimeOffset.UtcNow);
@@ -60,7 +60,7 @@ public sealed class SuppressionTests
             Description = "desc",
             Impact = "impact",
             Recommendation = "rec",
-            ServiceWindow = ServiceWindowAdvisor.No("none")
+            ServiceWindow = ServiceWindowAdvisor.No("none"),
         };
     }
 }

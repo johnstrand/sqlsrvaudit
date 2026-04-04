@@ -18,7 +18,7 @@ public sealed class CliOptionsTests
             "--suppressions", "sqlaudit.suppressions.json",
             "--fail-on", "high",
             "--verbose",
-            "--stats-min-mods", "1234"
+            "--stats-min-mods", "1234",
         };
 
         var result = CliOptions.TryParse(args);
@@ -54,7 +54,7 @@ public sealed class CliOptionsTests
             "init-config",
             "--config", "ci.sqlaudit.json",
             "--non-interactive",
-            "--preset", "deep-strict"
+            "--preset", "deep-strict",
         };
 
         var result = CliOptions.TryParse(args);
@@ -74,7 +74,7 @@ public sealed class CliOptionsTests
             "suppressions",
             "init",
             "--path", "custom.suppressions.json",
-            "--force"
+            "--force",
         };
 
         var result = CliOptions.TryParse(args);
@@ -107,7 +107,7 @@ public sealed class CliOptionsTests
             "diff",
             "--previous", "old.json",
             "--current", "new.json",
-            "--quiet"
+            "--quiet",
         };
 
         var result = CliOptions.TryParse(args);

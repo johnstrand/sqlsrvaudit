@@ -22,10 +22,10 @@ public static class MarkdownReportRenderer
         sb.AppendLine("| Severity | Count |");
         sb.AppendLine("|---|---:|");
 
-        foreach (var severity in Enum.GetValues<AuditSeverity>().OrderBy(s => s))
+        foreach (var severity in Enum.GetValues<AuditSeverity>().Order())
         {
             var count = report.SeverityCounts.TryGetValue(severity, out var value) ? value : 0;
-            sb.AppendLine($"| {severity} | {count} |");
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {severity} | {count} |");
         }
 
         sb.AppendLine();
@@ -35,17 +35,17 @@ public static class MarkdownReportRenderer
         sb.AppendLine("|---|---:|");
         foreach (var category in report.CategoryCounts.OrderByDescending(kvp => kvp.Value).ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
         {
-            sb.AppendLine($"| {EscapeInline(category.Key)} | {category.Value} |");
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {EscapeInline(category.Key)} | {category.Value} |");
         }
 
         sb.AppendLine();
         sb.AppendLine("### Suppressions");
         sb.AppendLine();
-        sb.AppendLine($"- Total rules: {report.SuppressionSummary.TotalRules}");
-        sb.AppendLine($"- Active rules: {report.SuppressionSummary.ActiveRules}");
-        sb.AppendLine($"- Expired rules: {report.SuppressionSummary.ExpiredRules}");
-        sb.AppendLine($"- Suppressed findings: {report.SuppressionSummary.SuppressedFindings}");
-        sb.AppendLine($"- Remaining findings: {report.SuppressionSummary.RemainingFindings}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Total rules: {report.SuppressionSummary.TotalRules}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Active rules: {report.SuppressionSummary.ActiveRules}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Expired rules: {report.SuppressionSummary.ExpiredRules}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Suppressed findings: {report.SuppressionSummary.SuppressedFindings}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Remaining findings: {report.SuppressionSummary.RemainingFindings}");
         sb.AppendLine();
 
         if (report.CheckExecutions.Count > 0)
@@ -57,7 +57,7 @@ public static class MarkdownReportRenderer
 
             foreach (var check in report.CheckExecutions.OrderByDescending(c => c.DurationMs).ThenBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase))
             {
-                sb.AppendLine($"| {EscapeInline(check.CheckId)} | {check.Status} | {check.DurationMs} | {check.FindingCount} | {EscapeInline(check.Title)} |");
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {EscapeInline(check.CheckId)} | {check.Status} | {check.DurationMs} | {check.FindingCount} | {EscapeInline(check.Title)} |");
             }
 
             sb.AppendLine();
@@ -86,12 +86,12 @@ public static class MarkdownReportRenderer
         sb.AppendLine("### Top Risky Objects");
         sb.AppendLine();
         var topRiskyObjects = report.Findings
-            .GroupBy(f => f.DatabaseObject)
+            .GroupBy(f => f.DatabaseObject, StringComparer.Ordinal)
             .Select(g => new
             {
                 DatabaseObject = g.Key,
                 Score = g.Sum(f => Score(f.Severity)),
-                Count = g.Count()
+                Count = g.Count(),
             })
             .OrderByDescending(x => x.Score)
             .ThenByDescending(x => x.Count)
@@ -109,12 +109,12 @@ public static class MarkdownReportRenderer
             sb.AppendLine("|---|---:|---:|");
             foreach (var entry in topRiskyObjects)
             {
-                sb.AppendLine($"| `{EscapeInline(entry.DatabaseObject)}` | {entry.Score} | {entry.Count} |");
+                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| `{EscapeInline(entry.DatabaseObject)}` | {entry.Score} | {entry.Count} |");
             }
         }
 
         sb.AppendLine();
-        sb.AppendLine($"Total findings: **{report.Findings.Count}**");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Total findings: **{report.Findings.Count}**");
         sb.AppendLine();
 
         if (report.Findings.Count == 0)
@@ -172,6 +172,6 @@ public static class MarkdownReportRenderer
         AuditSeverity.High => 4,
         AuditSeverity.Medium => 3,
         AuditSeverity.Low => 2,
-        _ => 1
+        _ => 1,
     };
 }

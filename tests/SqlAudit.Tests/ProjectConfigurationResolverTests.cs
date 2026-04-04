@@ -23,8 +23,8 @@ public sealed class ProjectConfigurationResolverTests
                 auditOptions = new
                 {
                     staleStatsMinModifications = 222,
-                    identityUsageWarningPercent = 91
-                }
+                    identityUsageWarningPercent = 91,
+                },
             });
 
             File.WriteAllText(configPath, configJson);
@@ -42,11 +42,11 @@ public sealed class ProjectConfigurationResolverTests
                 OutputFormat = OutputFormat.Both,
                 AuditOptionOverrides = new AuditOptionsOverrides
                 {
-                    StaleStatsMinModifications = 999
-                }
+                    StaleStatsMinModifications = 999,
+                },
             };
 
-            var resolved = ProjectConfigurationResolver.Resolve(cli, null);
+            var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
 
             Assert.Equal(AuditProfile.Quick, resolved.Profile);
             Assert.Equal(OutputFormat.Both, resolved.Format);
@@ -79,10 +79,10 @@ public sealed class ProjectConfigurationResolverTests
             Profile = AuditProfile.Quick,
             OutputFormat = OutputFormat.Both,
             ActiveCheckIds = ["STAT-001"],
-            AuditOptionOverrides = new AuditOptionsOverrides()
+            AuditOptionOverrides = new AuditOptionsOverrides(),
         };
 
-        var exception = Assert.Throws<InvalidOperationException>(() => ProjectConfigurationResolver.Resolve(cli, null));
+        var exception = Assert.Throws<InvalidOperationException>(() => ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null));
         Assert.Contains("Invalid check id", exception.Message, StringComparison.Ordinal);
     }
 
@@ -100,7 +100,7 @@ public sealed class ProjectConfigurationResolverTests
 
             var configJson = JsonSerializer.Serialize(new
             {
-                suppressionsPath
+                suppressionsPath,
             });
             File.WriteAllText(configPath, configJson);
 
@@ -119,10 +119,10 @@ public sealed class ProjectConfigurationResolverTests
                 NonInteractive = false,
                 Preset = null,
                 ActiveCheckIds = null,
-                AuditOptionOverrides = new AuditOptionsOverrides()
+                AuditOptionOverrides = new AuditOptionsOverrides(),
             };
 
-            var resolved = ProjectConfigurationResolver.Resolve(cli, null);
+            var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
 
             Assert.Equal(Path.GetFullPath(suppressionsPath), resolved.SuppressionsPath);
         }

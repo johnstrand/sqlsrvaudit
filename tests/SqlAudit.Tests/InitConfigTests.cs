@@ -41,7 +41,7 @@ public sealed class InitConfigTests
                 NonInteractive = true,
                 Preset = ConfigPreset.Quick,
                 ActiveCheckIds = null,
-                AuditOptionOverrides = new AuditOptionsOverrides()
+                AuditOptionOverrides = new AuditOptionsOverrides(),
             };
 
             var exit = InteractiveConfigWizard.Run(options);

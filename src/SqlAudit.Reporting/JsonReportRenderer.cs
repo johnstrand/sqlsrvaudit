@@ -9,7 +9,7 @@ public static class JsonReportRenderer
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
         WriteIndented = true,
-        Converters = { new JsonStringEnumConverter() }
+        Converters = { new JsonStringEnumConverter() },
     };
 
     public static string Render(AuditReport report) => JsonSerializer.Serialize(report, SerializerOptions);

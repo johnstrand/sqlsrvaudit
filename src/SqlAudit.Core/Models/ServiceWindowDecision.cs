@@ -10,7 +10,7 @@ public enum AuditOperationRisk
     PotentiallyOnlineIndexBuild,
     OfflineIndexBuild,
     ConstraintValidation,
-    Unknown
+    Unknown,
 }
 
 public static class ServiceWindowAdvisor
@@ -25,13 +25,13 @@ public static class ServiceWindowAdvisor
             AuditOperationRisk.PotentiallyOnlineIndexBuild => true,
             AuditOperationRisk.OfflineIndexBuild => true,
             AuditOperationRisk.ConstraintValidation => true,
-            _ => true
+            _ => true,
         };
 
         return new ServiceWindowDecision(requiresWindow, reason);
     }
 
-    public static ServiceWindowDecision Yes(string reason) => new(true, reason);
+    public static ServiceWindowDecision Yes(string reason) => new(RequiresServiceWindow: true, reason);
 
-    public static ServiceWindowDecision No(string reason) => new(false, reason);
+    public static ServiceWindowDecision No(string reason) => new(RequiresServiceWindow: false, reason);
 }

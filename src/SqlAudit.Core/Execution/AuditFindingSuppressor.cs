@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using SqlAudit.Core.Models;
 
 namespace SqlAudit.Core.Execution;
@@ -26,7 +23,7 @@ public static class AuditFindingSuppressor
                 new SuppressionSummary(0, 0, 0, 0, findings.Count));
         }
 
-        var expiredRules = rules.Count(r => r.ExpiresUtc.HasValue && r.ExpiresUtc.Value <= nowUtc);
+        var expiredRules = rules.Count(r => r.ExpiresUtc <= nowUtc);
         var activeRules = rules
             .Where(r => !r.ExpiresUtc.HasValue || r.ExpiresUtc.Value > nowUtc)
             .ToArray();

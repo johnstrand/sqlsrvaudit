@@ -10,44 +10,63 @@ internal enum OutputFormat
 {
     Markdown,
     Json,
-    Both
+    Both,
 }
 
 internal enum LogVerbosity
 {
     Quiet,
     Normal,
-    Verbose
+    Verbose,
 }
 
 internal enum ConfigPreset
 {
     Quick,
     Deep,
-    DeepStrict
+    DeepStrict,
 }
 
 internal sealed class CliOptions
 {
     public required string Command { get; init; }
+
     public string? Subcommand { get; init; }
+
     public string? PreviousReportPath { get; init; }
+
     public string? CurrentReportPath { get; init; }
+
     public string? ConnectionString { get; init; }
+
     public string? ConfigPath { get; init; }
+
     public string? OutputDirectory { get; init; }
+
     public string? MarkdownPath { get; init; }
+
     public string? JsonPath { get; init; }
+
     public string? FixesDirectory { get; init; }
+
     public string? SuppressionsPath { get; init; }
+
     public AuditProfile? Profile { get; init; }
+
     public OutputFormat? OutputFormat { get; init; }
+
     public bool NonInteractive { get; init; }
+
     public bool Force { get; init; }
+
     public LogVerbosity Verbosity { get; init; } = LogVerbosity.Normal;
+
     public ConfigPreset? Preset { get; init; }
+
     public AuditSeverity? FailOnSeverity { get; init; }
+
     public IReadOnlyList<string>? ActiveCheckIds { get; init; }
+
     public required AuditOptionsOverrides AuditOptionOverrides { get; init; }
 
     public static void PrintHelp()
@@ -200,8 +219,8 @@ internal sealed class CliOptions
                 StaleStatsModificationPercent = parseResult.GetValue(parser.StatsModPct),
                 StaleStatsMinModifications = parseResult.GetValue(parser.StatsMinMods),
                 IdentityUsageWarningPercent = parseResult.GetValue(parser.IdentityWarn),
-                IdentityUsageCriticalPercent = parseResult.GetValue(parser.IdentityCritical)
-            }
+                IdentityUsageCriticalPercent = parseResult.GetValue(parser.IdentityCritical),
+            },
         };
 
         return ParseResult.Ok(options);
@@ -259,7 +278,7 @@ internal sealed class CliOptions
         return [.. value
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(v => !string.IsNullOrWhiteSpace(v))
-            .Distinct(StringComparer.OrdinalIgnoreCase)];
+            .Distinct(StringComparer.OrdinalIgnoreCase),];
     }
 
     private static bool TryParsePreset(string? value, out ConfigPreset? preset, out string? error)
@@ -352,7 +371,7 @@ internal sealed class CliOptions
             IdentityWarn = CreateOption<double?>("--identity-warn-pct", "Identity warning threshold percentage"),
             IdentityCritical = CreateOption<double?>("--identity-critical-pct", "Identity critical threshold percentage"),
 
-            Scan = new Command("scan", "Run SQL Server health scan and generate reports/scripts.")
+            Scan = new Command("scan", "Run SQL Server health scan and generate reports/scripts."),
         };
         parser.Scan.Add(parser.Connection);
         parser.Scan.Add(parser.Config);
@@ -381,26 +400,26 @@ internal sealed class CliOptions
         {
             parser.Config,
             parser.NonInteractive,
-            parser.Preset
+            parser.Preset,
         };
 
         parser.SuppressionsInit = new Command("init", "Create a suppression file template.")
         {
             parser.SuppressionsPathOption,
             parser.PathAlias,
-            parser.Force
+            parser.Force,
         };
 
         parser.SuppressionsValidate = new Command("validate", "Validate suppression file syntax and rules.")
         {
             parser.SuppressionsPathOption,
-            parser.PathAlias
+            parser.PathAlias,
         };
 
         parser.Suppressions = new Command("suppressions", "Manage suppression files.")
         {
             parser.SuppressionsInit,
-            parser.SuppressionsValidate
+            parser.SuppressionsValidate,
         };
 
         parser.ReportDiff = new Command("diff", "Compare two JSON reports.")
@@ -408,12 +427,12 @@ internal sealed class CliOptions
             parser.Previous,
             parser.Current,
             parser.Verbose,
-            parser.Quiet
+            parser.Quiet,
         };
 
         parser.Report = new Command("report", "Report utilities.")
         {
-            parser.ReportDiff
+            parser.ReportDiff,
         };
 
 #pragma warning disable IDE0028 // Simplify collection initialization
@@ -422,7 +441,7 @@ internal sealed class CliOptions
             parser.Scan,
             parser.InitConfig,
             parser.Suppressions,
-            parser.Report
+            parser.Report,
         };
 #pragma warning restore IDE0028 // Simplify collection initialization
 
@@ -433,7 +452,7 @@ internal sealed class CliOptions
     {
         var option = new Option<T>(alias)
         {
-            Description = description
+            Description = description,
         };
 
         return option;
@@ -442,63 +461,110 @@ internal sealed class CliOptions
     private sealed class CliParser
     {
         public RootCommand Root { get; set; } = null!;
+
         public Command Scan { get; set; } = null!;
+
         public Command InitConfig { get; set; } = null!;
+
         public Command Suppressions { get; set; } = null!;
+
         public Command SuppressionsInit { get; set; } = null!;
+
         public Command SuppressionsValidate { get; set; } = null!;
+
         public Command Report { get; set; } = null!;
+
         public Command ReportDiff { get; set; } = null!;
+
         public Option<string?> Connection { get; set; } = null!;
+
         public Option<string?> Config { get; set; } = null!;
+
         public Option<string?> Profile { get; set; } = null!;
+
         public Option<string?> Format { get; set; } = null!;
+
         public Option<string?> Checks { get; set; } = null!;
+
         public Option<string?> Output { get; set; } = null!;
+
         public Option<string?> Markdown { get; set; } = null!;
+
         public Option<string?> Json { get; set; } = null!;
+
         public Option<string?> FixesDir { get; set; } = null!;
+
         public Option<string?> SuppressionsPathOption { get; set; } = null!;
+
         public Option<bool> NonInteractive { get; set; } = null!;
+
         public Option<bool> Force { get; set; } = null!;
+
         public Option<bool> Verbose { get; set; } = null!;
+
         public Option<bool> Quiet { get; set; } = null!;
+
         public Option<string?> Preset { get; set; } = null!;
+
         public Option<string?> FailOn { get; set; } = null!;
+
         public Option<string?> Previous { get; set; } = null!;
+
         public Option<string?> Current { get; set; } = null!;
+
         public Option<string?> PathAlias { get; set; } = null!;
+
         public Option<long?> LargeRows { get; set; } = null!;
+
         public Option<long?> UnusedMinUpdates { get; set; } = null!;
+
         public Option<long?> UnusedMaxReads { get; set; } = null!;
+
         public Option<double?> FragReorg { get; set; } = null!;
+
         public Option<double?> FragRebuild { get; set; } = null!;
+
         public Option<double?> StatsModPct { get; set; } = null!;
+
         public Option<long?> StatsMinMods { get; set; } = null!;
+
         public Option<double?> IdentityWarn { get; set; } = null!;
+
         public Option<double?> IdentityCritical { get; set; } = null!;
     }
 }
 
 internal sealed record ParseResult(bool Success, CliOptions? Options, string? ErrorMessage)
 {
-    public static ParseResult Ok(CliOptions options) => new(true, options, null);
-    public static ParseResult Help() => new(false, null, null);
-    public static ParseResult Fail(string error) => new(false, null, error);
+    public static ParseResult Ok(CliOptions options) => new(Success: true, options, ErrorMessage: null);
+
+    public static ParseResult Help() => new(Success: false, Options: null, ErrorMessage: null);
+
+    public static ParseResult Fail(string error) => new(Success: false, Options: null, error);
 }
 
 internal sealed class AuditOptionsOverrides
 {
     public long? LargeTableRowThreshold { get; set; }
+
     public long? UnusedIndexMinUpdates { get; set; }
+
     public long? UnusedIndexMaxReads { get; set; }
+
     public int? FragmentationMinPageCount { get; set; }
+
     public double? FragmentationReorganizeThresholdPercent { get; set; }
+
     public double? FragmentationRebuildThresholdPercent { get; set; }
+
     public double? LowPageDensityThresholdPercent { get; set; }
+
     public double? StaleStatsModificationPercent { get; set; }
+
     public long? StaleStatsMinModifications { get; set; }
+
     public double? IdentityUsageWarningPercent { get; set; }
+
     public double? IdentityUsageCriticalPercent { get; set; }
 
     public AuditOptions ApplyTo(AuditOptions baseline) => new()
@@ -513,37 +579,57 @@ internal sealed class AuditOptionsOverrides
         StaleStatsModificationPercent = StaleStatsModificationPercent ?? baseline.StaleStatsModificationPercent,
         StaleStatsMinModifications = StaleStatsMinModifications ?? baseline.StaleStatsMinModifications,
         IdentityUsageWarningPercent = IdentityUsageWarningPercent ?? baseline.IdentityUsageWarningPercent,
-        IdentityUsageCriticalPercent = IdentityUsageCriticalPercent ?? baseline.IdentityUsageCriticalPercent
+        IdentityUsageCriticalPercent = IdentityUsageCriticalPercent ?? baseline.IdentityUsageCriticalPercent,
     };
 }
 
 internal sealed class ProjectConfigFile
 {
     public string? ConnectionString { get; init; }
+
     public AuditProfile? Profile { get; init; }
+
     public OutputFormat? OutputFormat { get; init; }
+
     public string? OutputDirectory { get; init; }
+
     public string? MarkdownPath { get; init; }
+
     public string? JsonPath { get; init; }
+
     public string? FixesDirectory { get; init; }
+
     public string? SuppressionsPath { get; init; }
+
     public IReadOnlyList<string>? ActiveCheckIds { get; init; }
+
     public AuditOptionsOverrides? AuditOptions { get; init; }
 }
 
 internal sealed class EffectiveRunOptions
 {
     public required string ConnectionString { get; init; }
+
     public required AuditProfile Profile { get; init; }
+
     public required OutputFormat Format { get; init; }
+
     public required string OutputDirectory { get; init; }
+
     public required string MarkdownPath { get; init; }
+
     public required string JsonPath { get; init; }
+
     public required string FixesDirectory { get; init; }
+
     public required string? SuppressionsPath { get; init; }
+
     public required LogVerbosity Verbosity { get; init; }
+
     public required AuditSeverity? FailOnSeverity { get; init; }
+
     public required IReadOnlyList<string>? ActiveCheckIds { get; init; }
+
     public required AuditOptions AuditOptions { get; init; }
 }
 
@@ -588,7 +674,7 @@ internal static class ProjectConfigurationResolver
             Verbosity = cliOptions.Verbosity,
             FailOnSeverity = cliOptions.FailOnSeverity,
             ActiveCheckIds = activeCheckIds,
-            AuditOptions = effectiveAuditOptions
+            AuditOptions = effectiveAuditOptions,
         };
     }
 
@@ -657,7 +743,7 @@ internal static class ProjectConfigurationResolver
         AllowTrailingCommas = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
-        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) },
     };
 
     private static string? ResolveSuppressionsPath(string? cliPath, string? configPath)

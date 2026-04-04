@@ -34,7 +34,7 @@ public sealed class SqlServerSnapshotCollector
             Statistics = includeStatistics
                 ? await ReadStatisticsAsync(connection, cancellationToken).ConfigureAwait(false)
                 : [],
-            IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false)
+            IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false),
         };
     }
 
@@ -555,7 +555,7 @@ public sealed class SqlServerSnapshotCollector
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 120
+            CommandTimeout = 120,
         };
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -606,38 +606,38 @@ internal static class SqlRead
             short s => s == 1,
             int i => i == 1,
             long l => l == 1,
-            _ => Convert.ToBoolean(value)
+            _ => Convert.ToBoolean(value),
         };
     }
 
     public static int Int(SqlDataReader reader, string column)
     {
         var value = reader[column];
-        return value is DBNull ? 0 : Convert.ToInt32(value);
+        return value is DBNull ? 0 : Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static long Long(SqlDataReader reader, string column)
     {
         var value = reader[column];
-        return value is DBNull ? 0L : Convert.ToInt64(value);
+        return value is DBNull ? 0L : Convert.ToInt64(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static decimal Decimal(SqlDataReader reader, string column)
     {
         var value = reader[column];
-        return value is DBNull ? 0m : Convert.ToDecimal(value);
+        return value is DBNull ? 0m : Convert.ToDecimal(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static decimal? NullableDecimal(SqlDataReader reader, string column)
     {
         var value = reader[column];
-        return value is DBNull ? null : Convert.ToDecimal(value);
+        return value is DBNull ? null : Convert.ToDecimal(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static double Double(SqlDataReader reader, string column)
     {
         var value = reader[column];
-        return value is DBNull ? 0 : Convert.ToDouble(value);
+        return value is DBNull ? 0 : Convert.ToDouble(value, System.Globalization.CultureInfo.InvariantCulture);
     }
 
     public static DateTimeOffset? NullableDateTimeOffset(SqlDataReader reader, string column)
@@ -658,7 +658,7 @@ internal static class SqlRead
                 DateTimeStyles.AssumeUniversal,
                 out var parsed)
                 ? parsed
-                : null
+                : null,
         };
     }
 }

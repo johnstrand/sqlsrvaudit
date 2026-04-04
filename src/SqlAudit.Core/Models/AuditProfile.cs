@@ -3,7 +3,7 @@ namespace SqlAudit.Core.Models;
 public enum AuditProfile
 {
     Quick,
-    Deep
+    Deep,
 }
 
 public static class AuditProfileDefaults
@@ -22,8 +22,8 @@ public static class AuditProfileDefaults
             StaleStatsModificationPercent = 20,
             StaleStatsMinModifications = 1_000,
             IdentityUsageWarningPercent = 85,
-            IdentityUsageCriticalPercent = 97
+            IdentityUsageCriticalPercent = 97,
         },
-        _ => new AuditOptions()
+        _ => new AuditOptions(),
     };
 }

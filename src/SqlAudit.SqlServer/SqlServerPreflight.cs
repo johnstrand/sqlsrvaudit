@@ -1,6 +1,3 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Data.SqlClient;
 
 namespace SqlAudit.SqlServer;
@@ -10,7 +7,7 @@ public static class SqlServerPreflight
     public static async Task<SqlServerPreflightResult> RunAsync(string connectionString, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(connectionString);
-        await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+        await connection.OpenAsync(cancellationToken);
 
         const string sql = """
             SELECT

@@ -1,19 +1,16 @@
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using SqlAudit.Core.Abstractions;
 using SqlAudit.Core.Execution;
 using SqlAudit.Core.Models;
+using System.Globalization;
 
 namespace SqlAudit.SqlServer.Checks;
 
 internal sealed class MissingPrimaryKeyCheck : IHealthCheck
 {
     public string Id => "PK-001";
+
     public string Title => "Missing primary keys";
+
     public string Category => "Keys";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -51,8 +48,8 @@ internal sealed class MissingPrimaryKeyCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("Rows", table.RowCount.ToString(CultureInfo.InvariantCulture)),
-                    new FindingEvidence("ReservedMB", table.ReservedMb.ToString(CultureInfo.InvariantCulture))
-                ]
+                    new FindingEvidence("ReservedMB", table.ReservedMb.ToString(CultureInfo.InvariantCulture)),
+                ],
             });
         }
 
@@ -63,7 +60,9 @@ internal sealed class MissingPrimaryKeyCheck : IHealthCheck
 internal sealed class LargeHeapTableCheck : IHealthCheck
 {
     public string Id => "HEAP-001";
+
     public string Title => "Large heap tables";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -83,7 +82,7 @@ internal sealed class LargeHeapTableCheck : IHealthCheck
                 Severity = AuditSeverity.High,
                 DatabaseObject = tableName,
                 Description = "A high-row-count table has no clustered index.",
-                Impact = "Heaps on large tables can increase read amplification and fragmentation." ,
+                Impact = "Heaps on large tables can increase read amplification and fragmentation.",
                 Recommendation = "Create a clustered index on a stable key.",
                 ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
                     AuditOperationRisk.OfflineIndexBuild,
@@ -98,8 +97,8 @@ internal sealed class LargeHeapTableCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("Rows", table.RowCount.ToString(CultureInfo.InvariantCulture)),
-                    new FindingEvidence("ReservedMB", table.ReservedMb.ToString(CultureInfo.InvariantCulture))
-                ]
+                    new FindingEvidence("ReservedMB", table.ReservedMb.ToString(CultureInfo.InvariantCulture)),
+                ],
             });
         }
 
@@ -110,7 +109,9 @@ internal sealed class LargeHeapTableCheck : IHealthCheck
 internal sealed class ForeignKeyDisabledOrUntrustedCheck : IHealthCheck
 {
     public string Id => "FK-001";
+
     public string Title => "Disabled or untrusted foreign keys";
+
     public string Category => "Constraints";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -144,8 +145,8 @@ internal sealed class ForeignKeyDisabledOrUntrustedCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("IsDisabled", fk.IsDisabled.ToString()),
-                    new FindingEvidence("IsNotTrusted", fk.IsNotTrusted.ToString())
-                ]
+                    new FindingEvidence("IsNotTrusted", fk.IsNotTrusted.ToString()),
+                ],
             });
         }
 
@@ -156,7 +157,9 @@ internal sealed class ForeignKeyDisabledOrUntrustedCheck : IHealthCheck
 internal sealed class ForeignKeyWithoutIndexCheck : IHealthCheck
 {
     public string Id => "FK-002";
+
     public string Title => "Foreign keys without supporting index";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -190,8 +193,8 @@ internal sealed class ForeignKeyWithoutIndexCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("FKColumns", fk.ParentColumns),
-                    new FindingEvidence("ReferencedTable", SqlName.Table(fk.ReferencedSchema, fk.ReferencedTable))
-                ]
+                    new FindingEvidence("ReferencedTable", SqlName.Table(fk.ReferencedSchema, fk.ReferencedTable)),
+                ],
             });
         }
 
@@ -202,7 +205,9 @@ internal sealed class ForeignKeyWithoutIndexCheck : IHealthCheck
 internal sealed class ForeignKeyTypeMismatchCheck : IHealthCheck
 {
     public string Id => "FK-003";
+
     public string Title => "Foreign key column type mismatch";
+
     public string Category => "Constraints";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -235,8 +240,8 @@ internal sealed class ForeignKeyTypeMismatchCheck : IHealthCheck
                     Evidence =
                     [
                         new FindingEvidence("ParentTypes", fk.ParentColumnTypes),
-                        new FindingEvidence("ReferencedTypes", fk.ReferencedColumnTypes)
-                    ]
+                        new FindingEvidence("ReferencedTypes", fk.ReferencedColumnTypes),
+                    ],
                 };
             })
             .ToArray();
@@ -248,7 +253,9 @@ internal sealed class ForeignKeyTypeMismatchCheck : IHealthCheck
 internal sealed class DuplicateIndexCheck : IHealthCheck
 {
     public string Id => "IDX-001";
+
     public string Title => "Duplicate indexes";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -262,9 +269,9 @@ internal sealed class DuplicateIndexCheck : IHealthCheck
                 i.IndexType,
                 i.KeyColumns,
                 i.IncludedColumns,
-                Filter = i.FilterDefinition ?? string.Empty
+                Filter = i.FilterDefinition ?? string.Empty,
             })
-            .Where(g => g.Count() > 1);
+            .Where(g => g.Skip(1).Any());
 
         var findings = new List<AuditFinding>();
         foreach (var group in candidates)
@@ -303,8 +310,8 @@ internal sealed class DuplicateIndexCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("Keep", keep.IndexName),
-                    new FindingEvidence("Drop", string.Join(", ", drop.Select(i => i.IndexName)))
-                ]
+                    new FindingEvidence("Drop", string.Join(", ", drop.Select(i => i.IndexName))),
+                ],
             });
         }
 
@@ -315,7 +322,9 @@ internal sealed class DuplicateIndexCheck : IHealthCheck
 internal sealed class OverlappingIndexCheck : IHealthCheck
 {
     public string Id => "IDX-002";
+
     public string Title => "Overlapping index coverage";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -378,8 +387,8 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
                         [
                             new FindingEvidence("CandidateDrop", narrow.IndexName),
                             new FindingEvidence("CoverageIndex", wide.IndexName),
-                            new FindingEvidence("KeyColumns", narrow.KeyColumns)
-                        ]
+                            new FindingEvidence("KeyColumns", narrow.KeyColumns),
+                        ],
                     });
 
                     foundCoverage = true;
@@ -447,7 +456,9 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
 internal sealed class DisabledIndexCheck : IHealthCheck
 {
     public string Id => "IDX-003";
+
     public string Title => "Disabled indexes";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -475,7 +486,7 @@ internal sealed class DisabledIndexCheck : IHealthCheck
                         -- Reason: Rebuilding disabled index can block DML.
                         ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName} REBUILD;
                         """,
-                    Evidence = [new FindingEvidence("IndexType", index.IndexType)]
+                    Evidence = [new FindingEvidence("IndexType", index.IndexType)],
                 };
             })
             .ToArray();
@@ -487,7 +498,9 @@ internal sealed class DisabledIndexCheck : IHealthCheck
 internal sealed class UnusedIndexCheck : IHealthCheck
 {
     public string Id => "IDX-004";
+
     public string Title => "Unused write-heavy indexes";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -531,8 +544,8 @@ internal sealed class UnusedIndexCheck : IHealthCheck
                 [
                     new FindingEvidence("Reads", reads.ToString(CultureInfo.InvariantCulture)),
                     new FindingEvidence("Updates", usage.UserUpdates.ToString(CultureInfo.InvariantCulture)),
-                    new FindingEvidence("LastReadUtc", usage.LastReadUtc?.ToString("u", CultureInfo.InvariantCulture) ?? "never")
-                ]
+                    new FindingEvidence("LastReadUtc", usage.LastReadUtc?.ToString("u", CultureInfo.InvariantCulture) ?? "never"),
+                ],
             });
         }
 
@@ -543,7 +556,9 @@ internal sealed class UnusedIndexCheck : IHealthCheck
 internal sealed class FragmentationCheck : IHealthCheck
 {
     public string Id => "IDX-005";
+
     public string Title => "Fragmented indexes";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -591,8 +606,8 @@ internal sealed class FragmentationCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("FragmentationPercent", stat.FragmentationPercent.ToString("F2", CultureInfo.InvariantCulture)),
-                    new FindingEvidence("PageCount", stat.PageCount.ToString(CultureInfo.InvariantCulture))
-                ]
+                    new FindingEvidence("PageCount", stat.PageCount.ToString(CultureInfo.InvariantCulture)),
+                ],
             });
         }
 
@@ -603,7 +618,9 @@ internal sealed class FragmentationCheck : IHealthCheck
 internal sealed class LowPageDensityCheck : IHealthCheck
 {
     public string Id => "IDX-006";
+
     public string Title => "Low page density indexes";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -645,8 +662,8 @@ internal sealed class LowPageDensityCheck : IHealthCheck
                 Evidence =
                 [
                     new FindingEvidence("AvgPageSpaceUsedPercent", stat.AvgPageSpaceUsedPercent.ToString("F2", CultureInfo.InvariantCulture)),
-                    new FindingEvidence("PageCount", stat.PageCount.ToString(CultureInfo.InvariantCulture))
-                ]
+                    new FindingEvidence("PageCount", stat.PageCount.ToString(CultureInfo.InvariantCulture)),
+                ],
             });
         }
 
@@ -657,7 +674,9 @@ internal sealed class LowPageDensityCheck : IHealthCheck
 internal sealed class FillFactorAnomalyCheck : IHealthCheck
 {
     public string Id => "IDX-007";
+
     public string Title => "Potentially over-low fill factor";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -686,7 +705,7 @@ internal sealed class FillFactorAnomalyCheck : IHealthCheck
                         ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName}
                         REBUILD WITH (ONLINE = ON, FILLFACTOR = 90);
                         """,
-                    Evidence = [new FindingEvidence("FillFactor", index.FillFactor.ToString(CultureInfo.InvariantCulture))]
+                    Evidence = [new FindingEvidence("FillFactor", index.FillFactor.ToString(CultureInfo.InvariantCulture))],
                 };
             })
             .ToArray();
@@ -698,7 +717,9 @@ internal sealed class FillFactorAnomalyCheck : IHealthCheck
 internal sealed class StaleStatisticsCheck : IHealthCheck
 {
     public string Id => "STAT-001";
+
     public string Title => "Stale statistics";
+
     public string Category => "Statistics";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -744,8 +765,8 @@ internal sealed class StaleStatisticsCheck : IHealthCheck
                     new FindingEvidence("Rows", stat.Rows.ToString(CultureInfo.InvariantCulture)),
                     new FindingEvidence("ModificationCounter", stat.ModificationCounter.ToString(CultureInfo.InvariantCulture)),
                     new FindingEvidence("Threshold", threshold.ToString(CultureInfo.InvariantCulture)),
-                    new FindingEvidence("LastUpdatedUtc", stat.LastUpdatedUtc?.ToString("u", CultureInfo.InvariantCulture) ?? "never")
-                ]
+                    new FindingEvidence("LastUpdatedUtc", stat.LastUpdatedUtc?.ToString("u", CultureInfo.InvariantCulture) ?? "never"),
+                ],
             });
         }
 
@@ -756,7 +777,9 @@ internal sealed class StaleStatisticsCheck : IHealthCheck
 internal sealed class StatisticsConfigurationCheck : IHealthCheck
 {
     public string Id => "STAT-002";
+
     public string Title => "Statistics configuration issues";
+
     public string Category => "Statistics";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -782,7 +805,7 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
                     -- RequiresServiceWindow: false
                     -- Reason: Database option update is metadata-only.
                     ALTER DATABASE CURRENT SET AUTO_CREATE_STATISTICS ON;
-                    """
+                    """,
             });
         }
 
@@ -805,7 +828,7 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
                     -- RequiresServiceWindow: false
                     -- Reason: Database option update is metadata-only.
                     ALTER DATABASE CURRENT SET AUTO_UPDATE_STATISTICS ON;
-                    """
+                    """,
             });
         }
 
@@ -831,7 +854,7 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
                         -- RequiresServiceWindow: false
                         -- Reason: Statistics option adjustment is low-risk maintenance.
                         UPDATE STATISTICS {tableName} [{stat.StatsName}] WITH RESAMPLE;
-                        """
+                        """,
                 };
             }));
 
@@ -842,7 +865,9 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
 internal sealed class IdentityExhaustionCheck : IHealthCheck
 {
     public string Id => "CAP-001";
+
     public string Title => "Identity key exhaustion risk";
+
     public string Category => "Capacity";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -881,8 +906,8 @@ internal sealed class IdentityExhaustionCheck : IHealthCheck
                 [
                     new FindingEvidence("UsagePercent", identity.UsagePercent.ToString("F2", CultureInfo.InvariantCulture)),
                     new FindingEvidence("LastValue", identity.LastValue?.ToString(CultureInfo.InvariantCulture) ?? "null"),
-                    new FindingEvidence("MaxValue", identity.MaxValue.ToString(CultureInfo.InvariantCulture))
-                ]
+                    new FindingEvidence("MaxValue", identity.MaxValue.ToString(CultureInfo.InvariantCulture)),
+                ],
             });
         }
 
@@ -893,7 +918,9 @@ internal sealed class IdentityExhaustionCheck : IHealthCheck
 internal sealed class OverWideIndexKeyCheck : IHealthCheck
 {
     public string Id => "IDX-008";
+
     public string Title => "Over-wide index key definitions";
+
     public string Category => "Indexes";
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
@@ -934,8 +961,8 @@ internal sealed class OverWideIndexKeyCheck : IHealthCheck
                     Evidence =
                     [
                         new FindingEvidence("KeySizeBytes", index.KeySizeBytes.ToString(CultureInfo.InvariantCulture)),
-                        new FindingEvidence("KeyColumnCount", index.KeyColumnCount.ToString(CultureInfo.InvariantCulture))
-                    ]
+                        new FindingEvidence("KeyColumnCount", index.KeyColumnCount.ToString(CultureInfo.InvariantCulture)),
+                    ],
                 };
             })
             .ToArray();

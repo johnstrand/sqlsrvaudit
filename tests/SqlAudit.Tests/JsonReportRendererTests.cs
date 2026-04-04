@@ -30,9 +30,9 @@ public sealed class JsonReportRendererTests
                     Recommendation = "recommendation",
                     ServiceWindow = ServiceWindowAdvisor.Yes("needs window"),
                     FixScript = "SELECT 1;",
-                    Evidence = [new FindingEvidence("Rows", "1000")]
-                }
-            ]
+                    Evidence = [new FindingEvidence("Rows", "1000")],
+                },
+            ],
         };
 
         var json = JsonReportRenderer.Render(report);

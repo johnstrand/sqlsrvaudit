@@ -45,7 +45,7 @@ internal static class ReportDiffCommand
         var report = JsonSerializer.Deserialize<AuditReport>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
-            Converters = { new JsonStringEnumConverter() }
+            Converters = { new JsonStringEnumConverter() },
         }) ?? throw new InvalidOperationException($"Could not parse report file: {path}");
 #pragma warning restore CA1869 // Cache and reuse 'JsonSerializerOptions' instances
         return report;
@@ -54,11 +54,11 @@ internal static class ReportDiffCommand
     internal static ReportDiffResult Analyze(AuditReport previous, AuditReport current)
     {
         var previousMap = previous.Findings
-            .GroupBy(BuildKey)
+            .GroupBy(BuildKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var currentMap = current.Findings
-            .GroupBy(BuildKey)
+            .GroupBy(BuildKey, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
         var added = new List<AuditFinding>();

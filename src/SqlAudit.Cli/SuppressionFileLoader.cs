@@ -40,7 +40,7 @@ internal static class SuppressionFileLoader
         using var document = JsonDocument.Parse(json, new JsonDocumentOptions
         {
             CommentHandling = JsonCommentHandling.Skip,
-            AllowTrailingCommas = true
+            AllowTrailingCommas = true,
         });
 
         var errors = new List<string>();
@@ -101,7 +101,7 @@ internal static class SuppressionFileLoader
                 continue;
             }
 
-            if (expiresUtc.HasValue && expiresUtc.Value <= now)
+            if (expiresUtc <= now)
             {
                 warnings.Add($"{location} is expired and will not suppress findings.");
             }

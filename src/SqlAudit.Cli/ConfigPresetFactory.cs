@@ -19,8 +19,8 @@ internal static class ConfigPresetFactory
                     UnusedIndexMinUpdates = 20000,
                     UnusedIndexMaxReads = 25,
                     IdentityUsageWarningPercent = 85,
-                    IdentityUsageCriticalPercent = 97
-                }
+                    IdentityUsageCriticalPercent = 97,
+                },
             },
             ConfigPreset.DeepStrict => new ProjectConfigFile
             {
@@ -39,8 +39,8 @@ internal static class ConfigPresetFactory
                     StaleStatsModificationPercent = 10,
                     StaleStatsMinModifications = 250,
                     IdentityUsageWarningPercent = 75,
-                    IdentityUsageCriticalPercent = 90
-                }
+                    IdentityUsageCriticalPercent = 90,
+                },
             },
             _ => new ProjectConfigFile
             {
@@ -59,9 +59,9 @@ internal static class ConfigPresetFactory
                     StaleStatsModificationPercent = 20,
                     StaleStatsMinModifications = 500,
                     IdentityUsageWarningPercent = 80,
-                    IdentityUsageCriticalPercent = 95
-                }
-            }
+                    IdentityUsageCriticalPercent = 95,
+                },
+            },
         };
     }
 }

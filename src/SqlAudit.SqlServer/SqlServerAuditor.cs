@@ -6,7 +6,7 @@ namespace SqlAudit.SqlServer;
 
 public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
 {
-    private readonly IReadOnlyCollection<IHealthCheck>? _customChecks = checks?.ToArray();
+    private readonly IReadOnlyCollection<IHealthCheck>? customChecks = checks?.ToArray();
 
     public async Task<AuditReport> RunAsync(
         string connectionString,
@@ -15,12 +15,12 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         CancellationToken cancellationToken = default)
     {
         var snapshot = await SqlServerSnapshotCollector.CollectAsync(connectionString, profile, cancellationToken).ConfigureAwait(false);
-        var runner = new HealthCheckRunner(_customChecks ?? SqlServerHealthChecks.Create(profile));
+        var runner = new HealthCheckRunner(customChecks ?? SqlServerHealthChecks.Create(profile));
 
         var context = new HealthCheckContext
         {
             Snapshot = snapshot,
-            Options = options ?? AuditProfileDefaults.For(profile)
+            Options = options ?? AuditProfileDefaults.For(profile),
         };
 
         var runResult = await runner.RunAsync(context, cancellationToken).ConfigureAwait(false);
@@ -35,9 +35,9 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
             Findings = [.. runResult.Findings
                 .OrderBy(f => f.Severity)
                 .ThenBy(f => f.Category, StringComparer.Ordinal)
-                .ThenBy(f => f.DatabaseObject, StringComparer.Ordinal)],
+                .ThenBy(f => f.DatabaseObject, StringComparer.Ordinal),],
             CheckExecutions = [.. runResult.CheckExecutions.OrderBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase)],
-            SuppressionSummary = new SuppressionSummary(0, 0, 0, 0, runResult.Findings.Count)
+            SuppressionSummary = new SuppressionSummary(0, 0, 0, 0, runResult.Findings.Count),
         };
     }
 }

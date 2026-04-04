@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-
 namespace SqlAudit.Core.Models;
 
 public sealed record AuditSuppressionRule(

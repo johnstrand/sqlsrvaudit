@@ -1,6 +1,3 @@
-using System;
-using System.IO;
-
 namespace SqlAudit.Cli;
 
 internal static class SuppressionsCommand
@@ -20,7 +17,7 @@ internal static class SuppressionsCommand
         {
             "init" => RunInit(path, options.Force),
             "validate" => RunValidate(path),
-            _ => RunUnknownSubcommand(subcommand)
+            _ => RunUnknownSubcommand(subcommand),
         };
     }
 

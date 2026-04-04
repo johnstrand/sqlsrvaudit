@@ -1,5 +1,3 @@
-using System;
-
 namespace SqlAudit.SqlServer;
 
 internal static class SqlName
@@ -13,8 +11,8 @@ internal static class SqlName
 
     public static string ObjectNameSuffix(string name)
     {
-        var cleaned = name.Replace(" ", "_", StringComparison.Ordinal)
-            .Replace("-", "_", StringComparison.Ordinal)
+        var cleaned = name.Replace(' ', '_')
+            .Replace('-', '_')
             .Replace("]", string.Empty, StringComparison.Ordinal)
             .Replace("[", string.Empty, StringComparison.Ordinal);
 

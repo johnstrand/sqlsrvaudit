@@ -79,7 +79,7 @@ internal static class InteractiveConfigWizard
             ActiveCheckIds = useDefaultCheckSet
                 ? null
                 : checks.Where(c => active.Contains(c.Id)).Select(c => c.Id).ToArray(),
-            AuditOptions = storeOverrides
+            AuditOptions = storeOverrides,
         };
 
         ProjectConfigurationResolver.SaveConfig(targetPath, config);
@@ -97,7 +97,7 @@ internal static class InteractiveConfigWizard
     private static string PresetName(ConfigPreset preset) => preset switch
     {
         ConfigPreset.DeepStrict => "deep-strict",
-        _ => preset.ToString().ToLowerInvariant()
+        _ => preset.ToString().ToLowerInvariant(),
     };
 
     private static HashSet<string> BuildDefaultActiveSet(IReadOnlyList<string>? configuredIds, IReadOnlyList<CheckDescriptor> checks)
@@ -120,7 +120,7 @@ internal static class InteractiveConfigWizard
         Console.WriteLine();
         Console.WriteLine("Check selection");
         Console.WriteLine("Press Enter to keep defaults, or type 'custom' to choose individual checks.");
-        Console.Write($"Customize checks? [default: keep] > ");
+        Console.Write("Customize checks? [default: keep] > ");
         var mode = Console.ReadLine();
         if (!string.Equals(mode, "custom", StringComparison.OrdinalIgnoreCase))
         {
@@ -217,7 +217,7 @@ internal static class InteractiveConfigWizard
             StaleStatsModificationPercent = existing?.StaleStatsModificationPercent,
             StaleStatsMinModifications = existing?.StaleStatsMinModifications,
             IdentityUsageWarningPercent = existing?.IdentityUsageWarningPercent,
-            IdentityUsageCriticalPercent = existing?.IdentityUsageCriticalPercent
+            IdentityUsageCriticalPercent = existing?.IdentityUsageCriticalPercent,
         };
 
         Console.WriteLine();
@@ -254,7 +254,7 @@ internal static class InteractiveConfigWizard
                 return @default;
             }
 
-            if (Enum.TryParse<AuditProfile>(input, true, out var profile))
+            if (Enum.TryParse<AuditProfile>(input, ignoreCase: true, out var profile))
             {
                 return profile;
             }
@@ -274,7 +274,7 @@ internal static class InteractiveConfigWizard
                 return @default;
             }
 
-            if (Enum.TryParse<OutputFormat>(input, true, out var format))
+            if (Enum.TryParse<OutputFormat>(input, ignoreCase: true, out var format))
             {
                 return format;
             }

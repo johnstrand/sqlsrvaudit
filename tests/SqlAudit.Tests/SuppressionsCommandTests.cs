@@ -101,7 +101,7 @@ public sealed class SuppressionsCommandTests
             Force = force,
             Preset = null,
             ActiveCheckIds = null,
-            AuditOptionOverrides = new AuditOptionsOverrides()
+            AuditOptionOverrides = new AuditOptionsOverrides(),
         };
     }
 }
