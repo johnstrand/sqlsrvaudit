@@ -3,3 +3,4 @@ obj/
 audit-output/
 .vs/
 TestResults/
+/*.json
