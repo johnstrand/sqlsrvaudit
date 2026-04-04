@@ -22,6 +22,7 @@ public sealed class MarkdownReportRendererTests
 
         var markdown = MarkdownReportRenderer.Render(report);
 
+        Assert.Contains("<a id=\"top\"></a>", markdown, StringComparison.Ordinal);
         Assert.Contains("### Exclusions", markdown, StringComparison.Ordinal);
         Assert.Contains("- Schemas: `archive`", markdown, StringComparison.Ordinal);
         Assert.Contains("- Tables: `Book_Backup`, `dbo.Legacy_Book_Backup`", markdown, StringComparison.Ordinal);
@@ -78,7 +79,14 @@ public sealed class MarkdownReportRendererTests
         Assert.Contains("[STAT-002](#rule-stat-002)", markdown, StringComparison.Ordinal);
         Assert.DoesNotContain("[IDX-005](#rule-idx-005)", markdown, StringComparison.Ordinal);
 
-        Assert.Contains("### Rule `IDX-001` - Duplicate index definitions detected (1)", markdown, StringComparison.Ordinal);
-        Assert.Contains("### Rule `STAT-002` - Statistics configuration issues (1)", markdown, StringComparison.Ordinal);
+        const string idxSection = "### Rule `IDX-001` - Duplicate index definitions detected (1)";
+        const string statSection = "### Rule `STAT-002` - Statistics configuration issues (1)";
+        var idxPosition = markdown.IndexOf(idxSection, StringComparison.Ordinal);
+        var statPosition = markdown.IndexOf(statSection, StringComparison.Ordinal);
+
+        Assert.True(idxPosition >= 0);
+        Assert.True(statPosition >= 0);
+        Assert.True(idxPosition < statPosition);
+        Assert.Contains("#### [Medium] Duplicate index definitions detected [^](#top)", markdown, StringComparison.Ordinal);
     }
 }

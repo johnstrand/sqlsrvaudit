@@ -24,6 +24,7 @@ public static class MarkdownReportRenderer
 
     private static void WriteHeader(StringBuilder sb, AuditReport report)
     {
+        sb.AppendLine("<a id=\"top\"></a>");
         sb.AppendLine("# SQL Audit Health Report");
         sb.AppendLine();
         sb.AppendLine($"- Schema Version: `{EscapeInline(report.SchemaVersion)}`");
@@ -103,7 +104,7 @@ public static class MarkdownReportRenderer
         sb.AppendLine("| Check Id | Status | Duration (ms) | Findings | Title |");
         sb.AppendLine("|---|---|---:|---:|---|");
 
-        foreach (var check in report.CheckExecutions.OrderByDescending(c => c.DurationMs).ThenBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase))
+        foreach (var check in GetOrderedCheckExecutions(report))
         {
             var checkId = ruleIdsWithFindings.Contains(check.CheckId)
                 ? $"[{EscapeInline(check.CheckId)}](#{BuildRuleAnchorId(check.CheckId)})"
@@ -192,6 +193,9 @@ public static class MarkdownReportRenderer
         sb.AppendLine("## Findings");
         sb.AppendLine();
 
+        var checkDisplayOrder = GetOrderedCheckExecutions(report)
+            .Select((check, index) => new KeyValuePair<string, int>(check.CheckId, index))
+            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
         var checkTitlesById = report.CheckExecutions
             .ToDictionary(check => check.CheckId, check => check.Title, StringComparer.OrdinalIgnoreCase);
         var groups = report.Findings
@@ -203,7 +207,8 @@ public static class MarkdownReportRenderer
                     .OrderBy(finding => finding.Severity)
                     .ThenBy(finding => finding.Category, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(finding => finding.DatabaseObject, StringComparer.OrdinalIgnoreCase)]))
-            .OrderBy(group => group.Findings[0].Severity)
+            .OrderBy(group => checkDisplayOrder.TryGetValue(group.RuleId, out var order) ? order : int.MaxValue)
+            .ThenBy(group => group.Findings[0].Severity)
             .ThenBy(group => group.RuleId, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
@@ -226,7 +231,7 @@ public static class MarkdownReportRenderer
 
     private static void WriteFindingSection(StringBuilder sb, AuditFinding finding)
     {
-        sb.AppendLine($"#### [{finding.Severity}] {EscapeInline(finding.Title)}");
+        sb.AppendLine($"#### [{finding.Severity}] {EscapeInline(finding.Title)} [^](#top)");
         sb.AppendLine();
         sb.AppendLine($"- Id: `{EscapeInline(finding.Id)}`");
         sb.AppendLine($"- Category: `{EscapeInline(finding.Category)}`");
@@ -314,6 +319,13 @@ public static class MarkdownReportRenderer
     }
 
     private sealed record RuleFindingGroup(string RuleId, string? Title, IReadOnlyList<AuditFinding> Findings);
+
+    private static IEnumerable<CheckExecutionResult> GetOrderedCheckExecutions(AuditReport report)
+    {
+        return report.CheckExecutions
+            .OrderByDescending(check => check.DurationMs)
+            .ThenBy(check => check.CheckId, StringComparer.OrdinalIgnoreCase);
+    }
 
     private static int Score(AuditSeverity severity) => severity switch
     {
