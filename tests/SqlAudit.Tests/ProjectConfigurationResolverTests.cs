@@ -73,6 +73,36 @@ public sealed class ProjectConfigurationResolverTests
     }
 
     [Fact]
+    public void Resolve_LoadsEmbeddedPresetWhenConfigPathUsesPresetAlias()
+    {
+        var cli = new CliOptions
+        {
+            Command = "scan",
+            ConnectionString = "Server=.;Database=Db;Trusted_Connection=True;",
+            ConfigPath = "preset:deep-strict",
+            SuppressionsPath = null,
+            OutputDirectory = null,
+            MarkdownPath = null,
+            JsonPath = null,
+            FixesDirectory = null,
+            Profile = null,
+            OutputFormat = null,
+            NonInteractive = false,
+            Preset = null,
+            ActiveCheckIds = null,
+            AuditOptionOverrides = new AuditOptionsOverrides(),
+        };
+
+        var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
+
+        Assert.Equal(AuditProfile.Deep, resolved.Profile);
+        Assert.Equal(OutputFormat.Both, resolved.Format);
+        Assert.Equal(500, resolved.AuditOptions.FragmentationMinPageCount);
+        Assert.Equal(20, resolved.AuditOptions.FragmentationRebuildThresholdPercent);
+        Assert.Contains(Path.Combine("audit-output", "deep-strict"), resolved.OutputDirectory, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Resolve_ThrowsForInvalidCheckIdForProfile()
     {
         var cli = new CliOptions

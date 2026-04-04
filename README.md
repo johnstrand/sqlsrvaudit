@@ -65,7 +65,13 @@ dotnet run --project src/SqlAudit.Cli -- scan --profile quick --output "./audit-
 
 `scan` accepts a project config file via `--config <path>`. If `sqlaudit.project.json` exists in the working directory, it is loaded automatically.
 
-Prepackaged configs are included in `project-config/`:
+Built-in presets are embedded in the CLI and can be referenced without filesystem-relative paths:
+
+- `--config preset:quick`
+- `--config preset:deep`
+- `--config preset:deep-strict`
+
+For convenience, matching example files are also included in `project-config/`:
 
 - `project-config/sqlaudit.quick.json`
 - `project-config/sqlaudit.deep.json`
@@ -74,7 +80,7 @@ Prepackaged configs are included in `project-config/`:
 Example:
 
 ```bash
-dotnet run --project src/SqlAudit.Cli -- scan --config "project-config/sqlaudit.quick.json" --connection "Server=.;Database=MyDb;Trusted_Connection=True;TrustServerCertificate=True"
+dotnet run --project src/SqlAudit.Cli -- scan --config "preset:quick" --connection "Server=.;Database=MyDb;Trusted_Connection=True;TrustServerCertificate=True"
 ```
 
 `--profile`, `--format`, and threshold CLI switches override values from config files.

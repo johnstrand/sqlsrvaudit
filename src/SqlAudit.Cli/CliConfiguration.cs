@@ -428,7 +428,7 @@ internal sealed class CliOptions
         return new CliParser
         {
             Connection = CreateOption<string?>("--connection", "SQL Server connection string"),
-            Config = CreateOption<string?>("--config", "Project config JSON path"),
+            Config = CreateOption<string?>("--config", "Project config JSON path or preset alias (preset:quick|preset:deep|preset:deep-strict)"),
             Profile = CreateOption<string?>("--profile", "Check profile: quick|deep"),
             Format = CreateOption<string?>("--format", "Report output format: markdown|json|both"),
             Checks = CreateOption<string?>("--checks", "Comma-separated check IDs"),
@@ -850,23 +850,28 @@ internal static class ProjectConfigurationResolver
             return null;
         }
 
-        var fullPath = Path.GetFullPath(configPath);
-        if (!File.Exists(fullPath))
-        {
-            if (required)
-            {
-                throw new FileNotFoundException($"Config file not found: {fullPath}");
-            }
+        var serializerOptions = CreateSerializerOptions();
 
+        var fullPath = Path.GetFullPath(configPath);
+        if (File.Exists(fullPath))
+        {
+            var json = File.ReadAllText(fullPath);
+
+            return JsonSerializer.Deserialize<ProjectConfigFile>(json, serializerOptions)
+                ?? throw new InvalidOperationException($"Unable to parse config file: {fullPath}");
+        }
+
+        if (EmbeddedProjectConfigPresets.TryLoad(configPath, serializerOptions, out var embeddedConfig))
+        {
+            return embeddedConfig;
+        }
+
+        if (!required)
+        {
             return null;
         }
 
-        var json = File.ReadAllText(fullPath);
-
-        var config = JsonSerializer.Deserialize<ProjectConfigFile>(json, CreateSerializerOptions())
-            ?? throw new InvalidOperationException($"Unable to parse config file: {fullPath}");
-
-        return config;
+        throw new FileNotFoundException($"Config file not found: {fullPath}");
     }
 
     private static JsonSerializerOptions CreateSerializerOptions() => new()
