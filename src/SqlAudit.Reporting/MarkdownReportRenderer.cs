@@ -8,6 +8,21 @@ public static class MarkdownReportRenderer
     public static string Render(AuditReport report)
     {
         var sb = new StringBuilder();
+
+        WriteHeader(sb, report);
+        WriteScorecard(sb, report);
+        WriteCategories(sb, report);
+        WriteSuppressions(sb, report);
+        WriteCheckExecution(sb, report);
+        WriteQuickWins(sb, report);
+        WriteTopRiskyObjects(sb, report);
+        WriteFindings(sb, report);
+
+        return sb.ToString();
+    }
+
+    private static void WriteHeader(StringBuilder sb, AuditReport report)
+    {
         sb.AppendLine("# SQL Audit Health Report");
         sb.AppendLine();
         sb.AppendLine($"- Schema Version: `{EscapeInline(report.SchemaVersion)}`");
@@ -17,6 +32,10 @@ public static class MarkdownReportRenderer
         sb.AppendLine($"- Edition: `{EscapeInline(report.Edition)}`");
         sb.AppendLine($"- Product Version: `{EscapeInline(report.ProductVersion)}`");
         sb.AppendLine();
+    }
+
+    private static void WriteScorecard(StringBuilder sb, AuditReport report)
+    {
         sb.AppendLine("## Scorecard");
         sb.AppendLine();
         sb.AppendLine("| Severity | Count |");
@@ -29,16 +48,25 @@ public static class MarkdownReportRenderer
         }
 
         sb.AppendLine();
+    }
+
+    private static void WriteCategories(StringBuilder sb, AuditReport report)
+    {
         sb.AppendLine("### Categories");
         sb.AppendLine();
         sb.AppendLine("| Category | Count |");
         sb.AppendLine("|---|---:|");
+
         foreach (var category in report.CategoryCounts.OrderByDescending(kvp => kvp.Value).ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
         {
             sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {EscapeInline(category.Key)} | {category.Value} |");
         }
 
         sb.AppendLine();
+    }
+
+    private static void WriteSuppressions(StringBuilder sb, AuditReport report)
+    {
         sb.AppendLine("### Suppressions");
         sb.AppendLine();
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Total rules: {report.SuppressionSummary.TotalRules}");
@@ -47,22 +75,30 @@ public static class MarkdownReportRenderer
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Suppressed findings: {report.SuppressionSummary.SuppressedFindings}");
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Remaining findings: {report.SuppressionSummary.RemainingFindings}");
         sb.AppendLine();
+    }
 
-        if (report.CheckExecutions.Count > 0)
+    private static void WriteCheckExecution(StringBuilder sb, AuditReport report)
+    {
+        if (report.CheckExecutions.Count == 0)
         {
-            sb.AppendLine("### Check Execution");
-            sb.AppendLine();
-            sb.AppendLine("| Check Id | Status | Duration (ms) | Findings | Title |");
-            sb.AppendLine("|---|---|---:|---:|---|");
-
-            foreach (var check in report.CheckExecutions.OrderByDescending(c => c.DurationMs).ThenBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase))
-            {
-                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {EscapeInline(check.CheckId)} | {check.Status} | {check.DurationMs} | {check.FindingCount} | {EscapeInline(check.Title)} |");
-            }
-
-            sb.AppendLine();
+            return;
         }
 
+        sb.AppendLine("### Check Execution");
+        sb.AppendLine();
+        sb.AppendLine("| Check Id | Status | Duration (ms) | Findings | Title |");
+        sb.AppendLine("|---|---|---:|---:|---|");
+
+        foreach (var check in report.CheckExecutions.OrderByDescending(c => c.DurationMs).ThenBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| {EscapeInline(check.CheckId)} | {check.Status} | {check.DurationMs} | {check.FindingCount} | {EscapeInline(check.Title)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteQuickWins(StringBuilder sb, AuditReport report)
+    {
         var quickWins = report.Findings
             .Where(f => !f.ServiceWindow.RequiresServiceWindow)
             .Take(10)
@@ -70,6 +106,7 @@ public static class MarkdownReportRenderer
 
         sb.AppendLine("### Quick Wins");
         sb.AppendLine();
+
         if (quickWins.Length == 0)
         {
             sb.AppendLine("No immediate low-risk fixes were identified.");
@@ -83,8 +120,13 @@ public static class MarkdownReportRenderer
         }
 
         sb.AppendLine();
+    }
+
+    private static void WriteTopRiskyObjects(StringBuilder sb, AuditReport report)
+    {
         sb.AppendLine("### Top Risky Objects");
         sb.AppendLine();
+
         var topRiskyObjects = report.Findings
             .GroupBy(f => f.DatabaseObject, StringComparer.Ordinal)
             .Select(g => new
@@ -102,18 +144,23 @@ public static class MarkdownReportRenderer
         if (topRiskyObjects.Length == 0)
         {
             sb.AppendLine("No risky objects identified.");
+            sb.AppendLine();
+            return;
         }
-        else
+
+        sb.AppendLine("| Object | Risk Score | Findings |");
+        sb.AppendLine("|---|---:|---:|");
+
+        foreach (var entry in topRiskyObjects)
         {
-            sb.AppendLine("| Object | Risk Score | Findings |");
-            sb.AppendLine("|---|---:|---:|");
-            foreach (var entry in topRiskyObjects)
-            {
-                sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| `{EscapeInline(entry.DatabaseObject)}` | {entry.Score} | {entry.Count} |");
-            }
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| `{EscapeInline(entry.DatabaseObject)}` | {entry.Score} | {entry.Count} |");
         }
 
         sb.AppendLine();
+    }
+
+    private static void WriteFindings(StringBuilder sb, AuditReport report)
+    {
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Total findings: **{report.Findings.Count}**");
         sb.AppendLine();
 
@@ -122,7 +169,7 @@ public static class MarkdownReportRenderer
             sb.AppendLine("## Findings");
             sb.AppendLine();
             sb.AppendLine("No issues were detected by the enabled check set.");
-            return sb.ToString();
+            return;
         }
 
         sb.AppendLine("## Findings");
@@ -130,38 +177,41 @@ public static class MarkdownReportRenderer
 
         foreach (var finding in report.Findings)
         {
-            sb.AppendLine($"### [{finding.Severity}] {EscapeInline(finding.Title)}");
-            sb.AppendLine();
-            sb.AppendLine($"- Id: `{EscapeInline(finding.Id)}`");
-            sb.AppendLine($"- Category: `{EscapeInline(finding.Category)}`");
-            sb.AppendLine($"- Object: `{EscapeInline(finding.DatabaseObject)}`");
-            sb.AppendLine($"- Service Window Required: **{finding.ServiceWindow.RequiresServiceWindow}**");
-            sb.AppendLine($"- Service Window Reason: {EscapeInline(finding.ServiceWindow.Reason)}");
-            sb.AppendLine($"- Description: {EscapeInline(finding.Description)}");
-            sb.AppendLine($"- Impact: {EscapeInline(finding.Impact)}");
-            sb.AppendLine($"- Recommendation: {EscapeInline(finding.Recommendation)}");
+            WriteFindingSection(sb, finding);
+        }
+    }
 
-            if (finding.Evidence.Count > 0)
+    private static void WriteFindingSection(StringBuilder sb, AuditFinding finding)
+    {
+        sb.AppendLine($"### [{finding.Severity}] {EscapeInline(finding.Title)}");
+        sb.AppendLine();
+        sb.AppendLine($"- Id: `{EscapeInline(finding.Id)}`");
+        sb.AppendLine($"- Category: `{EscapeInline(finding.Category)}`");
+        sb.AppendLine($"- Object: `{EscapeInline(finding.DatabaseObject)}`");
+        sb.AppendLine($"- Service Window Required: **{finding.ServiceWindow.RequiresServiceWindow}**");
+        sb.AppendLine($"- Service Window Reason: {EscapeInline(finding.ServiceWindow.Reason)}");
+        sb.AppendLine($"- Description: {EscapeInline(finding.Description)}");
+        sb.AppendLine($"- Impact: {EscapeInline(finding.Impact)}");
+        sb.AppendLine($"- Recommendation: {EscapeInline(finding.Recommendation)}");
+
+        if (finding.Evidence.Count > 0)
+        {
+            sb.AppendLine("- Evidence:");
+            foreach (var evidence in finding.Evidence)
             {
-                sb.AppendLine("- Evidence:");
-                foreach (var evidence in finding.Evidence)
-                {
-                    sb.AppendLine($"  - {EscapeInline(evidence.Name)}: `{EscapeInline(evidence.Value)}`");
-                }
+                sb.AppendLine($"  - {EscapeInline(evidence.Name)}: `{EscapeInline(evidence.Value)}`");
             }
-
-            if (!string.IsNullOrWhiteSpace(finding.FixScript))
-            {
-                sb.AppendLine("- Fix Script:");
-                sb.AppendLine("```sql");
-                sb.AppendLine(finding.FixScript.Trim());
-                sb.AppendLine("```");
-            }
-
-            sb.AppendLine();
         }
 
-        return sb.ToString();
+        if (!string.IsNullOrWhiteSpace(finding.FixScript))
+        {
+            sb.AppendLine("- Fix Script:");
+            sb.AppendLine("```sql");
+            sb.AppendLine(finding.FixScript.Trim());
+            sb.AppendLine("```");
+        }
+
+        sb.AppendLine();
     }
 
     private static string EscapeInline(string input) => input.Replace("|", "\\|", StringComparison.Ordinal);

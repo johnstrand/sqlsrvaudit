@@ -331,78 +331,83 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
     {
         var findings = new List<AuditFinding>();
 
-        foreach (var tableIndexes in context.Snapshot.Indexes
-                     .Where(i => !i.IsPrimaryKey && !i.IsUniqueConstraint && !i.IsUnique && !i.IsDisabled && !i.IsHypothetical)
-                     .GroupBy(i => i.ObjectId))
+        foreach (var indexes in GetComparableIndexGroups(context.Snapshot.Indexes))
         {
-            var indexes = tableIndexes.ToArray();
-            for (var i = 0; i < indexes.Length; i++)
+            foreach (var narrow in indexes)
             {
-                var foundCoverage = false;
-                for (var j = 0; j < indexes.Length; j++)
+                var finding = FindOverlappingIndex(indexes, narrow);
+                if (finding is not null)
                 {
-                    if (i == j)
-                    {
-                        continue;
-                    }
-
-                    var narrow = indexes[i];
-                    var wide = indexes[j];
-
-                    if (!IsPrefix(narrow.KeyColumns, wide.KeyColumns))
-                    {
-                        continue;
-                    }
-
-                    if (!IncludesSubset(narrow.IncludedColumns, wide.IncludedColumns))
-                    {
-                        continue;
-                    }
-
-                    if (!FiltersCompatible(narrow, wide))
-                    {
-                        continue;
-                    }
-
-                    var tableName = SqlName.Table(narrow.SchemaName, narrow.TableName);
-                    findings.Add(new AuditFinding
-                    {
-                        Id = $"IDX-002-{narrow.ObjectId}-{narrow.IndexId}-{wide.IndexId}",
-                        Title = "Index appears redundant to broader index",
-                        Category = Category,
-                        Severity = AuditSeverity.Low,
-                        DatabaseObject = tableName,
-                        Description = $"Index {narrow.IndexName} is likely covered by {wide.IndexName}.",
-                        Impact = "Potentially redundant maintenance overhead for similar access paths.",
-                        Recommendation = "Validate query plans and drop the redundant index if no regressions occur.",
-                        ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
-                            AuditOperationRisk.Unknown,
-                            "Dropping indexes is typically quick but should still be planned for safety."),
-                        FixScript = $"""
-                            -- RequiresServiceWindow: true
-                            -- Reason: Index drop should be scheduled after validating plan stability.
-                            DROP INDEX {SqlName.Index(narrow.IndexName)} ON {tableName};
-                            """,
-                        Evidence =
-                        [
-                            new FindingEvidence("CandidateDrop", narrow.IndexName),
-                            new FindingEvidence("CoverageIndex", wide.IndexName),
-                            new FindingEvidence("KeyColumns", narrow.KeyColumns),
-                        ],
-                    });
-
-                    foundCoverage = true;
-                    break;
-                }
-
-                if (foundCoverage)
-                {
-                    continue;
+                    findings.Add(finding);
                 }
             }
         }
 
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+
+    private static IEnumerable<IndexInfo[]> GetComparableIndexGroups(IEnumerable<IndexInfo> indexes)
+    {
+        return indexes
+            .Where(i => !i.IsPrimaryKey && !i.IsUniqueConstraint && !i.IsUnique && !i.IsDisabled && !i.IsHypothetical)
+            .GroupBy(i => i.ObjectId)
+            .Select(g => g.ToArray());
+    }
+
+    private static AuditFinding? FindOverlappingIndex(IReadOnlyCollection<IndexInfo> indexes, IndexInfo narrow)
+    {
+        foreach (var wide in indexes)
+        {
+            if (narrow.ObjectId == wide.ObjectId && narrow.IndexId == wide.IndexId)
+            {
+                continue;
+            }
+
+            var finding = TryCreateOverlappingIndexFinding(narrow, wide);
+            if (finding is not null)
+            {
+                return finding;
+            }
+        }
+
+        return null;
+    }
+
+    private static AuditFinding? TryCreateOverlappingIndexFinding(IndexInfo narrow, IndexInfo wide)
+    {
+        if (!IsPrefix(narrow.KeyColumns, wide.KeyColumns)
+            || !IncludesSubset(narrow.IncludedColumns, wide.IncludedColumns)
+            || !FiltersCompatible(narrow, wide))
+        {
+            return null;
+        }
+
+        var tableName = SqlName.Table(narrow.SchemaName, narrow.TableName);
+        return new AuditFinding
+        {
+            Id = $"IDX-002-{narrow.ObjectId}-{narrow.IndexId}-{wide.IndexId}",
+            Title = "Index appears redundant to broader index",
+            Category = "Indexes",
+            Severity = AuditSeverity.Low,
+            DatabaseObject = tableName,
+            Description = $"Index {narrow.IndexName} is likely covered by {wide.IndexName}.",
+            Impact = "Potentially redundant maintenance overhead for similar access paths.",
+            Recommendation = "Validate query plans and drop the redundant index if no regressions occur.",
+            ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
+                AuditOperationRisk.Unknown,
+                "Dropping indexes is typically quick but should still be planned for safety."),
+            FixScript = $"""
+                -- RequiresServiceWindow: true
+                -- Reason: Index drop should be scheduled after validating plan stability.
+                DROP INDEX {SqlName.Index(narrow.IndexName)} ON {tableName};
+                """,
+            Evidence =
+            [
+                new FindingEvidence("CandidateDrop", narrow.IndexName),
+                new FindingEvidence("CoverageIndex", wide.IndexName),
+                new FindingEvidence("KeyColumns", narrow.KeyColumns),
+            ],
+        };
     }
 
     private static bool IsPrefix(string prefix, string target)
@@ -508,15 +513,9 @@ internal sealed class UnusedIndexCheck : IHealthCheck
         var usageMap = context.Snapshot.IndexUsage.ToDictionary(u => (u.ObjectId, u.IndexId));
         var findings = new List<AuditFinding>();
 
-        foreach (var index in context.Snapshot.Indexes.Where(i => !i.IsPrimaryKey && !i.IsUniqueConstraint && !i.IsDisabled && !i.IsHypothetical))
+        foreach (var index in context.Snapshot.Indexes.Where(IsUnusedIndexCandidate))
         {
-            if (!usageMap.TryGetValue((index.ObjectId, index.IndexId), out var usage))
-            {
-                continue;
-            }
-
-            var reads = usage.UserSeeks + usage.UserScans + usage.UserLookups;
-            if (reads > context.Options.UnusedIndexMaxReads || usage.UserUpdates < context.Options.UnusedIndexMinUpdates)
+            if (!TryGetLowReadHighWriteUsage(context, usageMap, index, out var usage, out var reads))
             {
                 continue;
             }
@@ -550,6 +549,34 @@ internal sealed class UnusedIndexCheck : IHealthCheck
         }
 
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+
+    private static bool IsUnusedIndexCandidate(IndexInfo index)
+    {
+        return !index.IsPrimaryKey
+               && !index.IsUniqueConstraint
+               && !index.IsDisabled
+               && !index.IsHypothetical;
+    }
+
+    private static bool TryGetLowReadHighWriteUsage(
+        HealthCheckContext context,
+#pragma warning disable CA1859 // Use concrete types when possible for improved performance
+        IReadOnlyDictionary<(int ObjectId, int IndexId), IndexUsageInfo> usageMap,
+#pragma warning restore CA1859 // Use concrete types when possible for improved performance
+        IndexInfo index,
+        out IndexUsageInfo usage,
+        out long reads)
+    {
+        reads = 0;
+        if (!usageMap.TryGetValue((index.ObjectId, index.IndexId), out usage!))
+        {
+            return false;
+        }
+
+        reads = usage.UserSeeks + usage.UserScans + usage.UserLookups;
+        return reads <= context.Options.UnusedIndexMaxReads
+               && usage.UserUpdates >= context.Options.UnusedIndexMinUpdates;
     }
 }
 
@@ -859,6 +886,72 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
             }));
 
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}
+
+internal sealed class CompatibilityLevelCheck : IHealthCheck
+{
+    public string Id => "CFG-001";
+
+    public string Title => "Database compatibility level mismatch";
+
+    public string Category => "Configuration";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        if (context.Snapshot.IsAzureSql
+            || !TryResolveExpectedCompatibilityLevel(context.Snapshot.ProductVersion, out var expectedLevel)
+            || context.Snapshot.CompatibilityLevel == expectedLevel)
+        {
+            return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
+        }
+
+        var finding = new AuditFinding
+        {
+            Id = "CFG-001-COMPATIBILITY-LEVEL",
+            Title = "Database compatibility level does not match server version",
+            Category = Category,
+            Severity = AuditSeverity.Medium,
+            DatabaseObject = context.Snapshot.DatabaseName,
+            Description = $"Database compatibility level {context.Snapshot.CompatibilityLevel} differs from server-default level {expectedLevel}.",
+            Impact = "Older compatibility levels can miss optimizer improvements; mismatched behavior makes performance troubleshooting harder.",
+            Recommendation = "Validate workload and set the database compatibility level to the current server default.",
+            ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
+                AuditOperationRisk.Unknown,
+                "Changing compatibility level can materially change query plans and should be planned."),
+            FixScript = $"""
+                -- RequiresServiceWindow: true
+                -- Reason: Compatibility level changes can alter query plans.
+                ALTER DATABASE CURRENT SET COMPATIBILITY_LEVEL = {expectedLevel};
+                """,
+            Evidence =
+            [
+                new FindingEvidence("ServerProductVersion", context.Snapshot.ProductVersion),
+                new FindingEvidence("CurrentCompatibilityLevel", context.Snapshot.CompatibilityLevel.ToString(CultureInfo.InvariantCulture)),
+                new FindingEvidence("ExpectedCompatibilityLevel", expectedLevel.ToString(CultureInfo.InvariantCulture)),
+            ],
+        };
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>([finding]);
+    }
+
+    private static bool TryResolveExpectedCompatibilityLevel(string productVersion, out int expectedLevel)
+    {
+        expectedLevel = 0;
+        if (string.IsNullOrWhiteSpace(productVersion))
+        {
+            return false;
+        }
+
+        var majorSegment = productVersion.Split('.', 2, StringSplitOptions.TrimEntries)[0];
+        if (!int.TryParse(majorSegment, NumberStyles.Integer, CultureInfo.InvariantCulture, out var majorVersion)
+            || majorVersion <= 0)
+        {
+            return false;
+        }
+
+        expectedLevel = majorVersion * 10;
+        return true;
     }
 }
 

@@ -8,6 +8,7 @@ SqlAudit is a .NET 10 CLI application for SQL Server schema and index health ana
 - Index quality: duplicates, overlapping/redundant indexes, disabled indexes, write-heavy unused indexes, over-wide keys, fill factor anomalies
 - Physical health: fragmentation and low page density
 - Statistics: stale stats, `AUTO_CREATE_STATISTICS` / `AUTO_UPDATE_STATISTICS`, and `NORECOMPUTE` usage
+- Configuration: database compatibility level aligned with current server version
 - Capacity: identity exhaustion risk
 
 ## Profiles

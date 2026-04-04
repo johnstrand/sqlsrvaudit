@@ -77,118 +77,43 @@ internal sealed class CliOptions
 
     public static ParseResult TryParse(string[] args)
     {
-        if (args.Length > 0
-            && string.Equals(args[0], "suppressions", StringComparison.OrdinalIgnoreCase)
-            && (args.Length < 2 || args[1].StartsWith("--", StringComparison.Ordinal)))
+        var earlyValidation = ValidateSubcommandSyntax(args);
+        if (earlyValidation is not null)
         {
-            return ParseResult.Fail("Missing suppressions subcommand. Use 'init' or 'validate'.");
-        }
-
-        if (args.Length > 0
-            && string.Equals(args[0], "report", StringComparison.OrdinalIgnoreCase)
-            && (args.Length < 2 || args[1].StartsWith("--", StringComparison.Ordinal)))
-        {
-            return ParseResult.Fail("Missing report subcommand. Use 'diff'.");
+            return earlyValidation;
         }
 
         var parser = BuildParser();
 
         var parseResult = parser.Root.Parse(args);
-        if (string.Equals(parseResult.Action?.GetType().Name, "HelpAction", StringComparison.Ordinal)
-            || string.Equals(parseResult.Action?.GetType().Name, "VersionOptionAction", StringComparison.Ordinal)
-            || string.Equals(parseResult.Action?.GetType().Name, "VersionAction", StringComparison.Ordinal))
+        var actionResult = HandleParserAction(parseResult);
+        if (actionResult is not null)
         {
-            parseResult.Invoke();
-            return ParseResult.Help();
+            return actionResult;
         }
 
-        if (parseResult.Errors.Count > 0)
+        var parseError = ValidateParserErrors(parseResult);
+        if (parseError is not null)
         {
-            var errorMessage = string.Join(Environment.NewLine, parseResult.Errors.Select(e => e.Message));
-            return ParseResult.Fail(errorMessage);
+            return parseError;
         }
 
-        if (parseResult.GetValue(parser.Verbose) && parseResult.GetValue(parser.Quiet))
+        if (!TryResolveVerbosity(parseResult, parser, out var verbosity, out var verbosityError))
         {
-            return ParseResult.Fail("--verbose and --quiet cannot be used together.");
+            return ParseResult.Fail(verbosityError!);
         }
 
-        string? command;
-        string? subcommand = null;
-        if (parseResult.GetResult(parser.Scan) is not null)
+        if (!TryResolveCommand(parseResult, parser, out var command, out var subcommand, out var commandError))
         {
-            command = "scan";
-        }
-        else if (parseResult.GetResult(parser.InitConfig) is not null)
-        {
-            command = "init-config";
-        }
-        else if (parseResult.GetResult(parser.SuppressionsInit) is not null)
-        {
-            command = "suppressions";
-            subcommand = "init";
-        }
-        else if (parseResult.GetResult(parser.SuppressionsValidate) is not null)
-        {
-            command = "suppressions";
-            subcommand = "validate";
-        }
-        else if (parseResult.GetResult(parser.Suppressions) is not null)
-        {
-            return ParseResult.Fail("Missing suppressions subcommand. Use 'init' or 'validate'.");
-        }
-        else if (parseResult.GetResult(parser.ReportDiff) is not null)
-        {
-            command = "report";
-            subcommand = "diff";
-        }
-        else if (parseResult.GetResult(parser.Report) is not null)
-        {
-            return ParseResult.Fail("Missing report subcommand. Use 'diff'.");
-        }
-        else
-        {
-            return ParseResult.Fail("No command specified.");
+            return ParseResult.Fail(commandError!);
         }
 
-        LogVerbosity verbosity;
-        if (parseResult.GetValue(parser.Verbose))
+        if (!TryParseEnumOptions(parseResult, parser, out var enumOptions, out var enumError))
         {
-            verbosity = LogVerbosity.Verbose;
-        }
-        else if (parseResult.GetValue(parser.Quiet))
-        {
-            verbosity = LogVerbosity.Quiet;
-        }
-        else
-        {
-            verbosity = LogVerbosity.Normal;
+            return ParseResult.Fail(enumError!);
         }
 
-        if (!TryParseProfile(parseResult.GetValue(parser.Profile), out var parsedProfile, out var profileError))
-        {
-            return ParseResult.Fail(profileError!);
-        }
-
-        if (!TryParseFormat(parseResult.GetValue(parser.Format), out var parsedFormat, out var formatError))
-        {
-            return ParseResult.Fail(formatError!);
-        }
-
-        if (!TryParsePreset(parseResult.GetValue(parser.Preset), out var parsedPreset, out var presetError))
-        {
-            return ParseResult.Fail(presetError!);
-        }
-
-        if (!TryParseFailOnSeverity(parseResult.GetValue(parser.FailOn), out var parsedFailOn, out var failOnError))
-        {
-            return ParseResult.Fail(failOnError!);
-        }
-
-        var suppressionsPath = parseResult.GetValue(parser.SuppressionsPathOption)
-            ?? parseResult.GetValue(parser.PathAlias);
-
-        var options = new CliOptions
+        return ParseResult.Ok(new CliOptions
         {
             Command = command,
             Subcommand = subcommand,
@@ -200,14 +125,14 @@ internal sealed class CliOptions
             MarkdownPath = parseResult.GetValue(parser.Markdown),
             JsonPath = parseResult.GetValue(parser.Json),
             FixesDirectory = parseResult.GetValue(parser.FixesDir),
-            SuppressionsPath = suppressionsPath,
-            Profile = parsedProfile,
-            OutputFormat = parsedFormat,
+            SuppressionsPath = parseResult.GetValue(parser.SuppressionsPathOption) ?? parseResult.GetValue(parser.PathAlias),
+            Profile = enumOptions.Profile,
+            OutputFormat = enumOptions.Format,
             NonInteractive = parseResult.GetValue(parser.NonInteractive),
             Force = parseResult.GetValue(parser.Force),
             Verbosity = verbosity,
-            Preset = parsedPreset,
-            FailOnSeverity = parsedFailOn,
+            Preset = enumOptions.Preset,
+            FailOnSeverity = enumOptions.FailOnSeverity,
             ActiveCheckIds = ParseCheckIds(parseResult.GetValue(parser.Checks)),
             AuditOptionOverrides = new AuditOptionsOverrides
             {
@@ -221,9 +146,157 @@ internal sealed class CliOptions
                 IdentityUsageWarningPercent = parseResult.GetValue(parser.IdentityWarn),
                 IdentityUsageCriticalPercent = parseResult.GetValue(parser.IdentityCritical),
             },
-        };
+        });
+    }
 
-        return ParseResult.Ok(options);
+    private static ParseResult? ValidateSubcommandSyntax(string[] args)
+    {
+        return ValidateRequiredSubcommand(args, "suppressions", "Missing suppressions subcommand. Use 'init' or 'validate'.")
+            ?? ValidateRequiredSubcommand(args, "report", "Missing report subcommand. Use 'diff'.");
+    }
+
+    private static ParseResult? ValidateRequiredSubcommand(string[] args, string command, string message)
+    {
+        if (args.Length == 0 || !string.Equals(args[0], command, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var hasSubcommand = args.Length >= 2 && !args[1].StartsWith("--", StringComparison.Ordinal);
+        return hasSubcommand ? null : ParseResult.Fail(message);
+    }
+
+    private static ParseResult? HandleParserAction(System.CommandLine.ParseResult parseResult)
+    {
+        if (!string.Equals(parseResult.Action?.GetType().Name, "HelpAction", StringComparison.Ordinal)
+            && !string.Equals(parseResult.Action?.GetType().Name, "VersionOptionAction", StringComparison.Ordinal)
+            && !string.Equals(parseResult.Action?.GetType().Name, "VersionAction", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        parseResult.Invoke();
+        return ParseResult.Help();
+    }
+
+    private static ParseResult? ValidateParserErrors(System.CommandLine.ParseResult parseResult)
+    {
+        if (parseResult.Errors.Count == 0)
+        {
+            return null;
+        }
+
+        var errorMessage = string.Join(Environment.NewLine, parseResult.Errors.Select(e => e.Message));
+        return ParseResult.Fail(errorMessage);
+    }
+
+    private static bool TryResolveVerbosity(
+        System.CommandLine.ParseResult parseResult,
+        CliParser parser,
+        out LogVerbosity verbosity,
+        out string? error)
+    {
+        verbosity = LogVerbosity.Normal;
+        error = null;
+
+        if (parseResult.GetValue(parser.Verbose) && parseResult.GetValue(parser.Quiet))
+        {
+            error = "--verbose and --quiet cannot be used together.";
+            return false;
+        }
+
+        if (parseResult.GetValue(parser.Verbose))
+        {
+            verbosity = LogVerbosity.Verbose;
+            return true;
+        }
+
+        if (parseResult.GetValue(parser.Quiet))
+        {
+            verbosity = LogVerbosity.Quiet;
+        }
+
+        return true;
+    }
+
+    private static bool TryResolveCommand(
+        System.CommandLine.ParseResult parseResult,
+        CliParser parser,
+        out string command,
+        out string? subcommand,
+        out string? error)
+    {
+        command = string.Empty;
+        subcommand = null;
+        error = null;
+
+        if (parseResult.GetResult(parser.Scan) is not null)
+        {
+            command = "scan";
+            return true;
+        }
+
+        if (parseResult.GetResult(parser.InitConfig) is not null)
+        {
+            command = "init-config";
+            return true;
+        }
+
+        if (parseResult.GetResult(parser.SuppressionsInit) is not null)
+        {
+            command = "suppressions";
+            subcommand = "init";
+            return true;
+        }
+
+        if (parseResult.GetResult(parser.SuppressionsValidate) is not null)
+        {
+            command = "suppressions";
+            subcommand = "validate";
+            return true;
+        }
+
+        if (parseResult.GetResult(parser.Suppressions) is not null)
+        {
+            error = "Missing suppressions subcommand. Use 'init' or 'validate'.";
+            return false;
+        }
+
+        if (parseResult.GetResult(parser.ReportDiff) is not null)
+        {
+            command = "report";
+            subcommand = "diff";
+            return true;
+        }
+
+        if (parseResult.GetResult(parser.Report) is not null)
+        {
+            error = "Missing report subcommand. Use 'diff'.";
+            return false;
+        }
+
+        error = "No command specified.";
+        return false;
+    }
+
+    private static bool TryParseEnumOptions(
+        System.CommandLine.ParseResult parseResult,
+        CliParser parser,
+        out ParsedEnumOptions result,
+        out string? error)
+    {
+        result = new ParsedEnumOptions(Profile: null, Format: null, Preset: null, FailOnSeverity: null);
+
+        if (!TryParseProfile(parseResult.GetValue(parser.Profile), out var profile, out error)
+            || !TryParseFormat(parseResult.GetValue(parser.Format), out var format, out error)
+            || !TryParsePreset(parseResult.GetValue(parser.Preset), out var preset, out error)
+            || !TryParseFailOnSeverity(parseResult.GetValue(parser.FailOn), out var failOn, out error))
+        {
+            return false;
+        }
+
+        result = new ParsedEnumOptions(profile, format, preset, failOn);
+        return true;
     }
 
     private static bool TryParseProfile(string? value, out AuditProfile? profile, out string? error)
@@ -337,9 +410,22 @@ internal sealed class CliOptions
         return false;
     }
 
+    private sealed record ParsedEnumOptions(
+        AuditProfile? Profile,
+        OutputFormat? Format,
+        ConfigPreset? Preset,
+        AuditSeverity? FailOnSeverity);
+
     private static CliParser BuildParser()
     {
-        var parser = new CliParser
+        var parser = CreateParserOptions();
+        ConfigureParserCommands(parser);
+        return parser;
+    }
+
+    private static CliParser CreateParserOptions()
+    {
+        return new CliParser
         {
             Connection = CreateOption<string?>("--connection", "SQL Server connection string"),
             Config = CreateOption<string?>("--config", "Project config JSON path"),
@@ -373,6 +459,22 @@ internal sealed class CliOptions
 
             Scan = new Command("scan", "Run SQL Server health scan and generate reports/scripts."),
         };
+    }
+
+    private static void ConfigureParserCommands(CliParser parser)
+    {
+        AddScanOptions(parser);
+        parser.InitConfig = CreateInitConfigCommand(parser);
+        parser.SuppressionsInit = CreateSuppressionsInitCommand(parser);
+        parser.SuppressionsValidate = CreateSuppressionsValidateCommand(parser);
+        parser.Suppressions = CreateSuppressionsCommand(parser);
+        parser.ReportDiff = CreateReportDiffCommand(parser);
+        parser.Report = CreateReportCommand(parser);
+        parser.Root = CreateRootCommand(parser);
+    }
+
+    private static void AddScanOptions(CliParser parser)
+    {
         parser.Scan.Add(parser.Connection);
         parser.Scan.Add(parser.Config);
         parser.Scan.Add(parser.Profile);
@@ -395,48 +497,69 @@ internal sealed class CliOptions
         parser.Scan.Add(parser.StatsMinMods);
         parser.Scan.Add(parser.IdentityWarn);
         parser.Scan.Add(parser.IdentityCritical);
+    }
 
-        parser.InitConfig = new Command("init-config", "Create or update project configuration.")
+    private static Command CreateInitConfigCommand(CliParser parser)
+    {
+        return new Command("init-config", "Create or update project configuration.")
         {
             parser.Config,
             parser.NonInteractive,
             parser.Preset,
         };
+    }
 
-        parser.SuppressionsInit = new Command("init", "Create a suppression file template.")
+    private static Command CreateSuppressionsInitCommand(CliParser parser)
+    {
+        return new Command("init", "Create a suppression file template.")
         {
             parser.SuppressionsPathOption,
             parser.PathAlias,
             parser.Force,
         };
+    }
 
-        parser.SuppressionsValidate = new Command("validate", "Validate suppression file syntax and rules.")
+    private static Command CreateSuppressionsValidateCommand(CliParser parser)
+    {
+        return new Command("validate", "Validate suppression file syntax and rules.")
         {
             parser.SuppressionsPathOption,
             parser.PathAlias,
         };
+    }
 
-        parser.Suppressions = new Command("suppressions", "Manage suppression files.")
+    private static Command CreateSuppressionsCommand(CliParser parser)
+    {
+        return new Command("suppressions", "Manage suppression files.")
         {
             parser.SuppressionsInit,
             parser.SuppressionsValidate,
         };
+    }
 
-        parser.ReportDiff = new Command("diff", "Compare two JSON reports.")
+    private static Command CreateReportDiffCommand(CliParser parser)
+    {
+        return new Command("diff", "Compare two JSON reports.")
         {
             parser.Previous,
             parser.Current,
             parser.Verbose,
             parser.Quiet,
         };
+    }
 
-        parser.Report = new Command("report", "Report utilities.")
+    private static Command CreateReportCommand(CliParser parser)
+    {
+        return new Command("report", "Report utilities.")
         {
             parser.ReportDiff,
         };
+    }
 
+    private static RootCommand CreateRootCommand(CliParser parser)
+    {
 #pragma warning disable IDE0028 // Simplify collection initialization
-        parser.Root = new RootCommand("SQL Server schema and index health audit tool.")
+        return new RootCommand("SQL Server schema and index health audit tool.")
         {
             parser.Scan,
             parser.InitConfig,
@@ -444,8 +567,6 @@ internal sealed class CliOptions
             parser.Report,
         };
 #pragma warning restore IDE0028 // Simplify collection initialization
-
-        return parser;
     }
 
     private static Option<T> CreateOption<T>(string alias, string description)

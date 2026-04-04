@@ -129,51 +129,86 @@ internal static class InteractiveConfigWizard
 
         while (true)
         {
-            Console.WriteLine();
-            for (var i = 0; i < checks.Count; i++)
+            PrintCheckSelectionMenu(checks, active);
+            var input = ReadSelectionInput();
+            if (TryFinalizeSelection(input, active, out var completed))
             {
-                var check = checks[i];
-                var marker = active.Contains(check.Id) ? "x" : " ";
-                Console.WriteLine($"{i + 1,2}. [{marker}] {check.Id} {check.Title} ({check.Category})");
-            }
-
-            Console.WriteLine();
-            Console.WriteLine("Commands: done | all | none | toggle <n,n,...>");
-            Console.Write("> ");
-            var input = (Console.ReadLine() ?? string.Empty).Trim();
-
-            if (string.Equals(input, "done", StringComparison.OrdinalIgnoreCase))
-            {
-                if (active.Count == 0)
+                if (completed)
                 {
-                    Console.WriteLine("At least one check must remain active.");
-                    continue;
+                    return active;
                 }
 
-                return active;
-            }
-
-            if (string.Equals(input, "all", StringComparison.OrdinalIgnoreCase))
-            {
-                active = checks.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
                 continue;
             }
 
-            if (string.Equals(input, "none", StringComparison.OrdinalIgnoreCase))
+            if (TryApplySelectionCommand(input, checks, ref active))
             {
-                active.Clear();
-                continue;
-            }
-
-            if (input.StartsWith("toggle", StringComparison.OrdinalIgnoreCase))
-            {
-                var list = input.Length > 6 ? input[6..] : string.Empty;
-                ToggleNumbers(list, checks, active);
                 continue;
             }
 
             ToggleNumbers(input, checks, active);
         }
+    }
+
+    private static void PrintCheckSelectionMenu(IReadOnlyList<CheckDescriptor> checks, HashSet<string> active)
+    {
+        Console.WriteLine();
+        for (var i = 0; i < checks.Count; i++)
+        {
+            var check = checks[i];
+            var marker = active.Contains(check.Id) ? "x" : " ";
+            Console.WriteLine($"{i + 1,2}. [{marker}] {check.Id} {check.Title} ({check.Category})");
+        }
+
+        Console.WriteLine();
+        Console.WriteLine("Commands: done | all | none | toggle <n,n,...>");
+    }
+
+    private static string ReadSelectionInput()
+    {
+        Console.Write("> ");
+        return (Console.ReadLine() ?? string.Empty).Trim();
+    }
+
+    private static bool TryFinalizeSelection(string input, HashSet<string> active, out bool completed)
+    {
+        completed = false;
+        if (!string.Equals(input, "done", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (active.Count == 0)
+        {
+            Console.WriteLine("At least one check must remain active.");
+            return true;
+        }
+
+        completed = true;
+        return true;
+    }
+
+    private static bool TryApplySelectionCommand(string input, IReadOnlyList<CheckDescriptor> checks, ref HashSet<string> active)
+    {
+        if (string.Equals(input, "all", StringComparison.OrdinalIgnoreCase))
+        {
+            active = checks.Select(c => c.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return true;
+        }
+
+        if (string.Equals(input, "none", StringComparison.OrdinalIgnoreCase))
+        {
+            active.Clear();
+            return true;
+        }
+
+        if (!input.StartsWith("toggle", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        ToggleNumbers(input.Length > 6 ? input[6..] : string.Empty, checks, active);
+        return true;
     }
 
     private static void ToggleNumbers(string input, IReadOnlyList<CheckDescriptor> checks, HashSet<string> active)
@@ -189,18 +224,31 @@ internal static class InteractiveConfigWizard
 
         foreach (var token in tokens)
         {
-            if (!int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number) || number < 1 || number > checks.Count)
+            if (!TryResolveCheckId(token, checks, out var id))
             {
                 Console.WriteLine($"Invalid check number: {token}");
                 continue;
             }
 
-            var id = checks[number - 1].Id;
             if (!active.Add(id))
             {
                 active.Remove(id);
             }
         }
+    }
+
+    private static bool TryResolveCheckId(string token, IReadOnlyList<CheckDescriptor> checks, out string id)
+    {
+        id = string.Empty;
+        if (!int.TryParse(token, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number)
+            || number < 1
+            || number > checks.Count)
+        {
+            return false;
+        }
+
+        id = checks[number - 1].Id;
+        return true;
     }
 
     private static AuditOptionsOverrides PromptOptionsOverrides(AuditOptionsOverrides? existing)
@@ -381,16 +429,19 @@ internal static class AuditOptionsOverridesExtensions
 {
     public static bool HasValues(this AuditOptionsOverrides options)
     {
-        return options.LargeTableRowThreshold.HasValue
-               || options.UnusedIndexMinUpdates.HasValue
-               || options.UnusedIndexMaxReads.HasValue
-               || options.FragmentationMinPageCount.HasValue
-               || options.FragmentationReorganizeThresholdPercent.HasValue
-               || options.FragmentationRebuildThresholdPercent.HasValue
-               || options.LowPageDensityThresholdPercent.HasValue
-               || options.StaleStatsModificationPercent.HasValue
-               || options.StaleStatsMinModifications.HasValue
-               || options.IdentityUsageWarningPercent.HasValue
-               || options.IdentityUsageCriticalPercent.HasValue;
+        return new[]
+        {
+            options.LargeTableRowThreshold.HasValue,
+            options.UnusedIndexMinUpdates.HasValue,
+            options.UnusedIndexMaxReads.HasValue,
+            options.FragmentationMinPageCount.HasValue,
+            options.FragmentationReorganizeThresholdPercent.HasValue,
+            options.FragmentationRebuildThresholdPercent.HasValue,
+            options.LowPageDensityThresholdPercent.HasValue,
+            options.StaleStatsModificationPercent.HasValue,
+            options.StaleStatsMinModifications.HasValue,
+            options.IdentityUsageWarningPercent.HasValue,
+            options.IdentityUsageCriticalPercent.HasValue,
+        }.Any(static hasValue => hasValue);
     }
 }

@@ -22,6 +22,7 @@ public static class SqlServerHealthChecks
         new("IDX-007", QuickEnabled: false, DeepEnabled: true, () => new FillFactorAnomalyCheck()),
         new("STAT-001", QuickEnabled: false, DeepEnabled: true, () => new StaleStatisticsCheck()),
         new("STAT-002", QuickEnabled: true, DeepEnabled: true, () => new StatisticsConfigurationCheck()),
+        new("CFG-001", QuickEnabled: true, DeepEnabled: true, () => new CompatibilityLevelCheck()),
         new("CAP-001", QuickEnabled: true, DeepEnabled: true, () => new IdentityExhaustionCheck()),
         new("IDX-008", QuickEnabled: false, DeepEnabled: true, () => new OverWideIndexKeyCheck()),
     ];

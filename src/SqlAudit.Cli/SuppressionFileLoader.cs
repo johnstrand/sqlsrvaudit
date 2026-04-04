@@ -36,84 +36,124 @@ internal static class SuppressionFileLoader
             throw new FileNotFoundException($"Suppressions file not found: {fullPath}");
         }
 
-        var json = File.ReadAllText(fullPath);
-        using var document = JsonDocument.Parse(json, new JsonDocumentOptions
-        {
-            CommentHandling = JsonCommentHandling.Skip,
-            AllowTrailingCommas = true,
-        });
-
+        using var document = LoadDocument(fullPath);
         var errors = new List<string>();
         var warnings = new List<string>();
         var rules = new List<AuditSuppressionRule>();
 
-        if (document.RootElement.ValueKind != JsonValueKind.Object)
+        if (!TryGetRulesArray(document.RootElement, out var rulesElement, errors, warnings))
         {
-            errors.Add("Root element must be an object.");
             return ThrowIfStrict(fullPath, strict, rules, errors, warnings);
         }
 
-        if (!document.RootElement.TryGetProperty("rules", out var rulesElement))
+        ParseRules(rulesElement, rules, errors, warnings);
+
+        return ThrowIfStrict(fullPath, strict, rules, errors, warnings);
+    }
+
+    private static JsonDocument LoadDocument(string fullPath)
+    {
+        var json = File.ReadAllText(fullPath);
+        return JsonDocument.Parse(json, new JsonDocumentOptions
+        {
+            CommentHandling = JsonCommentHandling.Skip,
+            AllowTrailingCommas = true,
+        });
+    }
+
+    private static bool TryGetRulesArray(
+        JsonElement rootElement,
+        out JsonElement rulesElement,
+        List<string> errors,
+        List<string> warnings)
+    {
+        rulesElement = default;
+
+        if (rootElement.ValueKind != JsonValueKind.Object)
+        {
+            errors.Add("Root element must be an object.");
+            return false;
+        }
+
+        if (!rootElement.TryGetProperty("rules", out rulesElement))
         {
             warnings.Add("No 'rules' property found. File is valid but has no suppressions.");
-            return new ParsedSuppressions(rules, errors, warnings);
+            return false;
         }
 
         if (rulesElement.ValueKind != JsonValueKind.Array)
         {
             errors.Add("Property 'rules' must be an array.");
-            return ThrowIfStrict(fullPath, strict, rules, errors, warnings);
+            return false;
         }
 
+        return true;
+    }
+
+    private static void ParseRules(
+        JsonElement rulesElement,
+        List<AuditSuppressionRule> rules,
+        List<string> errors,
+        List<string> warnings)
+    {
         var now = DateTimeOffset.UtcNow;
+
         for (var i = 0; i < rulesElement.GetArrayLength(); i++)
         {
-            var element = rulesElement[i];
             var location = $"rules[{i}]";
-
-            if (element.ValueKind != JsonValueKind.Object)
+            var parseResult = ParseRule(rulesElement[i], location, now);
+            if (!parseResult.IsValid)
             {
-                errors.Add($"{location} must be an object.");
+                errors.Add(parseResult.ErrorMessage!);
                 continue;
             }
 
-            if (!TryGetString(element, "findingId", out var findingId) || string.IsNullOrWhiteSpace(findingId))
+            if (!string.IsNullOrWhiteSpace(parseResult.WarningMessage))
             {
-                errors.Add($"{location}.findingId is required and must be a non-empty string.");
-                continue;
+                warnings.Add(parseResult.WarningMessage!);
             }
 
-            if (!TryGetOptionalString(element, "databaseObjectPattern", out var objectPattern, out var objectPatternError))
-            {
-                errors.Add($"{location}.databaseObjectPattern {objectPatternError}");
-                continue;
-            }
+            rules.Add(parseResult.Rule!);
+        }
+    }
 
-            if (!TryGetOptionalString(element, "reason", out var reason, out var reasonError))
-            {
-                errors.Add($"{location}.reason {reasonError}");
-                continue;
-            }
-
-            if (!TryGetOptionalDateTimeOffset(element, "expiresUtc", out var expiresUtc, out var expiresError))
-            {
-                errors.Add($"{location}.expiresUtc {expiresError}");
-                continue;
-            }
-
-            if (expiresUtc <= now)
-            {
-                warnings.Add($"{location} is expired and will not suppress findings.");
-            }
-
-            rules.Add(new AuditSuppressionRule(
-                findingId.Trim(),
-                string.IsNullOrWhiteSpace(objectPattern) ? null : objectPattern.Trim(),
-                string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
-                expiresUtc));
+    private static RuleParseResult ParseRule(JsonElement element, string location, DateTimeOffset now)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            return RuleParseResult.Fail($"{location} must be an object.");
         }
 
-        return ThrowIfStrict(fullPath, strict, rules, errors, warnings);
+        if (!TryGetString(element, "findingId", out var findingId) || string.IsNullOrWhiteSpace(findingId))
+        {
+            return RuleParseResult.Fail($"{location}.findingId is required and must be a non-empty string.");
+        }
+
+        if (!TryGetOptionalString(element, "databaseObjectPattern", out var objectPattern, out var objectPatternError))
+        {
+            return RuleParseResult.Fail($"{location}.databaseObjectPattern {objectPatternError}");
+        }
+
+        if (!TryGetOptionalString(element, "reason", out var reason, out var reasonError))
+        {
+            return RuleParseResult.Fail($"{location}.reason {reasonError}");
+        }
+
+        if (!TryGetOptionalDateTimeOffset(element, "expiresUtc", out var expiresUtc, out var expiresError))
+        {
+            return RuleParseResult.Fail($"{location}.expiresUtc {expiresError}");
+        }
+
+        var warning = expiresUtc <= now
+            ? $"{location} is expired and will not suppress findings."
+            : null;
+
+        return RuleParseResult.Success(new AuditSuppressionRule(
+            findingId.Trim(),
+            string.IsNullOrWhiteSpace(objectPattern) ? null : objectPattern.Trim(),
+            string.IsNullOrWhiteSpace(reason) ? null : reason.Trim(),
+            expiresUtc),
+            warning);
     }
 
     private static ParsedSuppressions ThrowIfStrict(
@@ -222,6 +262,13 @@ internal static class SuppressionFileLoader
         IReadOnlyList<AuditSuppressionRule> Rules,
         IReadOnlyList<string> Errors,
         IReadOnlyList<string> Warnings);
+
+    private sealed record RuleParseResult(bool IsValid, AuditSuppressionRule? Rule, string? ErrorMessage, string? WarningMessage)
+    {
+        public static RuleParseResult Success(AuditSuppressionRule rule, string? warningMessage) => new(IsValid: true, rule, ErrorMessage: null, warningMessage);
+
+        public static RuleParseResult Fail(string errorMessage) => new(IsValid: false, Rule: null, errorMessage, WarningMessage: null);
+    }
 }
 
 internal sealed record SuppressionValidationResult(

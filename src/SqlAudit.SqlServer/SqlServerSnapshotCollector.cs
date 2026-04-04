@@ -21,6 +21,7 @@ public sealed class SqlServerSnapshotCollector
             DatabaseName = serverInfo.DatabaseName,
             Edition = serverInfo.Edition,
             ProductVersion = serverInfo.ProductVersion,
+            CompatibilityLevel = serverInfo.CompatibilityLevel,
             IsAzureSql = serverInfo.IsAzureSql,
             AutoCreateStatisticsOn = serverInfo.AutoCreateStatisticsOn,
             AutoUpdateStatisticsOn = serverInfo.AutoUpdateStatisticsOn,
@@ -46,6 +47,7 @@ public sealed class SqlServerSnapshotCollector
                 DB_NAME() AS database_name,
                 CONVERT(nvarchar(256), SERVERPROPERTY('Edition')) AS edition,
                 CONVERT(nvarchar(128), SERVERPROPERTY('ProductVersion')) AS product_version,
+                CONVERT(int, DATABASEPROPERTYEX(DB_NAME(), 'CompatibilityLevel')) AS compatibility_level,
                 CASE WHEN CONVERT(int, DATABASEPROPERTYEX(DB_NAME(), 'IsAutoCreateStatistics')) = 1 THEN 1 ELSE 0 END AS auto_create_stats,
                 CASE WHEN CONVERT(int, DATABASEPROPERTYEX(DB_NAME(), 'IsAutoUpdateStatistics')) = 1 THEN 1 ELSE 0 END AS auto_update_stats,
                 CASE WHEN CONVERT(int, SERVERPROPERTY('EngineEdition')) IN (5, 8) THEN 1 ELSE 0 END AS is_azure
@@ -64,6 +66,7 @@ public sealed class SqlServerSnapshotCollector
             SqlRead.String(reader, "database_name"),
             SqlRead.String(reader, "edition"),
             SqlRead.String(reader, "product_version"),
+            SqlRead.Int(reader, "compatibility_level"),
             SqlRead.Bool(reader, "auto_create_stats"),
             SqlRead.Bool(reader, "auto_update_stats"),
             SqlRead.Bool(reader, "is_azure"));
@@ -572,6 +575,7 @@ public sealed class SqlServerSnapshotCollector
         string DatabaseName,
         string Edition,
         string ProductVersion,
+        int CompatibilityLevel,
         bool AutoCreateStatisticsOn,
         bool AutoUpdateStatisticsOn,
         bool IsAzureSql);

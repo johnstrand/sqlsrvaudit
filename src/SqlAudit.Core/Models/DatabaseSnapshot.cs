@@ -10,6 +10,8 @@ public sealed class DatabaseSnapshot
 
     public required string ProductVersion { get; init; }
 
+    public required int CompatibilityLevel { get; init; }
+
     public required bool IsAzureSql { get; init; }
 
     public required bool AutoCreateStatisticsOn { get; init; }

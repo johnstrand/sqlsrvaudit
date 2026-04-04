@@ -29,105 +29,194 @@ static async Task<int> RunAsync(string[] args)
     var parseResult = CliOptions.TryParse(args);
     if (!parseResult.Success)
     {
-        if (parseResult.ErrorMessage is null)
-        {
-            return 0;
-        }
-
-        await Console.Error.WriteLineAsync(parseResult.ErrorMessage).ConfigureAwait(false);
-        await Console.Error.WriteLineAsync().ConfigureAwait(false);
-        CliOptions.PrintHelp();
-        return 2;
+        return await HandleParseFailureAsync(parseResult).ConfigureAwait(false);
     }
 
-    var options = parseResult.Options!;
+    return await DispatchCommandAsync(parseResult.Options!).ConfigureAwait(false);
+}
 
-    if (string.Equals(options.Command, "init-config", StringComparison.OrdinalIgnoreCase))
+static async Task<int> HandleParseFailureAsync(ParseResult parseResult)
+{
+    if (parseResult.ErrorMessage is null)
     {
-        return InteractiveConfigWizard.Run(options);
+        return 0;
     }
 
-    if (string.Equals(options.Command, "suppressions", StringComparison.OrdinalIgnoreCase))
+    await Console.Error.WriteLineAsync(parseResult.ErrorMessage).ConfigureAwait(false);
+    await Console.Error.WriteLineAsync().ConfigureAwait(false);
+    CliOptions.PrintHelp();
+    return 2;
+}
+
+static Task<int> DispatchCommandAsync(CliOptions options)
+{
+    if (IsCommand(options.Command, "init-config"))
     {
-        return SuppressionsCommand.Run(options);
+        return Task.FromResult(InteractiveConfigWizard.Run(options));
     }
 
-    if (string.Equals(options.Command, "report", StringComparison.OrdinalIgnoreCase))
+    if (IsCommand(options.Command, "suppressions"))
     {
-        return ReportDiffCommand.Run(options);
+        return Task.FromResult(SuppressionsCommand.Run(options));
     }
 
-    if (!string.Equals(options.Command, "scan", StringComparison.OrdinalIgnoreCase))
+    if (IsCommand(options.Command, "report"))
     {
-        await Console.Error.WriteLineAsync($"Unknown command: {options.Command}").ConfigureAwait(false);
-        CliOptions.PrintHelp();
-        return 2;
+        return Task.FromResult(ReportDiffCommand.Run(options));
     }
 
-    EffectiveRunOptions resolved;
+    if (!IsCommand(options.Command, "scan"))
+    {
+        return HandleUnknownCommandAsync(options.Command);
+    }
+
+    return RunScanCommandAsync(options);
+}
+
+static bool IsCommand(string actual, string expected) =>
+    string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+
+static async Task<int> HandleUnknownCommandAsync(string command)
+{
+    await Console.Error.WriteLineAsync($"Unknown command: {command}").ConfigureAwait(false);
+    CliOptions.PrintHelp();
+    return 2;
+}
+
+static async Task<int> RunScanCommandAsync(CliOptions options)
+{
+    var resolveResult = await ResolveRunOptionsAsync(options).ConfigureAwait(false);
+    if (!resolveResult.Success)
+    {
+        return resolveResult.ExitCode;
+    }
+
+    var resolved = resolveResult.Options!;
+    var verbosity = resolved.Verbosity;
+    var runTimer = Stopwatch.StartNew();
+    var checks = SqlServerHealthChecks.Create(resolved.Profile, resolved.ActiveCheckIds);
+
+    PrintBanner(verbosity);
+    PrintRunConfiguration(verbosity, resolved, checks.Count);
+
+    using var cts = CreateCancellationTokenSource();
+    await RunPreflightAsync(verbosity, resolved.ConnectionString, cts.Token).ConfigureAwait(false);
+
+    var report = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
+    report = ApplySuppressions(verbosity, report, resolved.SuppressionsPath);
+
+    await WriteOutputsAsync(verbosity, resolved, report, cts.Token).ConfigureAwait(false);
+    PrintScanSummary(verbosity, resolved, report, runTimer.Elapsed);
+
+    if (IsFailThresholdBreached(report, resolved.FailOnSeverity, out var threshold, out var matchingCount))
+    {
+        await Console.Error.WriteLineAsync($"Fail-on threshold hit: {threshold} ({matchingCount} finding(s) at or above threshold).")
+            .ConfigureAwait(false);
+        return 3;
+    }
+
+    return 0;
+}
+
+static async Task<ResolveRunOptionsResult> ResolveRunOptionsAsync(CliOptions options)
+{
     try
     {
         var stepResolve = StartStep(LogVerbosity.Normal, 1, 6, "Resolve configuration");
-        resolved = ProjectConfigurationResolver.Resolve(options, Environment.GetEnvironmentVariable("SQLAUDIT_CONNECTION"));
+        var resolved = ProjectConfigurationResolver.Resolve(options, Environment.GetEnvironmentVariable("SQLAUDIT_CONNECTION"));
         EndStep(LogVerbosity.Normal, stepResolve, "Configuration resolved");
+        return ResolveRunOptionsResult.Ok(resolved);
     }
     catch (Exception ex)
     {
         await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
-        return 2;
+        return ResolveRunOptionsResult.Fail(2);
     }
+}
 
-    var verbosity = resolved.Verbosity;
-    PrintBanner(verbosity);
-
-    var runTimer = Stopwatch.StartNew();
-    var checks = SqlServerHealthChecks.Create(resolved.Profile, resolved.ActiveCheckIds);
-
+static void PrintRunConfiguration(LogVerbosity verbosity, EffectiveRunOptions resolved, int activeChecks)
+{
     PrintLine(verbosity, LogVerbosity.Normal, $"  Profile      : {resolved.Profile.ToString().ToLowerInvariant()}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output format: {resolved.Format.ToString().ToLowerInvariant()}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Active checks: {checks.Count}");
+    PrintLine(verbosity, LogVerbosity.Normal, $"  Active checks: {activeChecks}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output dir   : {resolved.OutputDirectory}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Suppressions : {resolved.SuppressionsPath ?? "(none)"}");
+}
 
-    using var cts = new CancellationTokenSource();
+static CancellationTokenSource CreateCancellationTokenSource()
+{
+    var cts = new CancellationTokenSource();
     Console.CancelKeyPress += (_, eventArgs) =>
     {
         eventArgs.Cancel = true;
         cts.Cancel();
     };
 
-    var stepPreflight = StartStep(verbosity, 2, 6, "Run connection preflight checks");
-    var preflight = await SqlServerPreflight.RunAsync(resolved.ConnectionString, cts.Token).ConfigureAwait(false);
-    EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
+    return cts;
+}
 
+static async Task RunPreflightAsync(LogVerbosity verbosity, string connectionString, CancellationToken cancellationToken)
+{
+    var stepPreflight = StartStep(verbosity, 2, 6, "Run connection preflight checks");
+    var preflight = await SqlServerPreflight.RunAsync(connectionString, cancellationToken).ConfigureAwait(false);
+    EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
+}
+
+static async Task<AuditReport> RunAuditAsync(
+    LogVerbosity verbosity,
+    EffectiveRunOptions resolved,
+    IReadOnlyCollection<SqlAudit.Core.Abstractions.IHealthCheck> checks,
+    CancellationToken cancellationToken)
+{
     var stepAudit = StartStep(verbosity, 3, 6, "Run SQL Server analysis");
     PrintLine(verbosity, LogVerbosity.Normal, "      Collecting metadata and evaluating checks...");
+
     var auditor = new SqlServerAuditor(checks);
-    var report = await auditor.RunAsync(resolved.ConnectionString, resolved.AuditOptions, resolved.Profile, cts.Token).ConfigureAwait(false);
+    var report = await auditor.RunAsync(
+            resolved.ConnectionString,
+            resolved.AuditOptions,
+            resolved.Profile,
+            cancellationToken)
+        .ConfigureAwait(false);
+
     EndStep(verbosity, stepAudit, $"Analysis complete ({report.Findings.Count} findings)");
+    return report;
+}
 
+static AuditReport ApplySuppressions(LogVerbosity verbosity, AuditReport report, string? suppressionsPath)
+{
     var stepSuppressions = StartStep(verbosity, 4, 6, "Apply suppressions");
-    var suppressionRules = SuppressionFileLoader.Load(resolved.SuppressionsPath);
+    var suppressionRules = SuppressionFileLoader.Load(suppressionsPath);
     var suppressionOutcome = AuditFindingSuppressor.Apply(report.Findings, suppressionRules, DateTimeOffset.UtcNow);
-    report = ApplySuppressionResult(report, suppressionOutcome);
-    EndStep(verbosity, stepSuppressions, $"Suppressed {suppressionOutcome.Summary.SuppressedFindings} findings using {suppressionOutcome.Summary.ActiveRules} active rules");
+    var updatedReport = ApplySuppressionResult(report, suppressionOutcome);
 
+    EndStep(
+        verbosity,
+        stepSuppressions,
+        $"Suppressed {suppressionOutcome.Summary.SuppressedFindings} findings using {suppressionOutcome.Summary.ActiveRules} active rules");
+
+    return updatedReport;
+}
+
+static async Task WriteOutputsAsync(
+    LogVerbosity verbosity,
+    EffectiveRunOptions resolved,
+    AuditReport report,
+    CancellationToken cancellationToken)
+{
     var stepReports = StartStep(verbosity, 5, 6, "Render report files");
-    Directory.CreateDirectory(resolved.OutputDirectory);
-    Directory.CreateDirectory(Path.GetDirectoryName(resolved.MarkdownPath) ?? resolved.OutputDirectory);
-    Directory.CreateDirectory(Path.GetDirectoryName(resolved.JsonPath) ?? resolved.OutputDirectory);
-    Directory.CreateDirectory(resolved.FixesDirectory);
+    EnsureOutputDirectoriesExist(resolved);
 
     if (resolved.Format is OutputFormat.Markdown or OutputFormat.Both)
     {
         var markdown = MarkdownReportRenderer.Render(report);
-        await File.WriteAllTextAsync(resolved.MarkdownPath, markdown, cts.Token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(resolved.MarkdownPath, markdown, cancellationToken).ConfigureAwait(false);
     }
 
     if (resolved.Format is OutputFormat.Json or OutputFormat.Both)
     {
         var json = JsonReportRenderer.Render(report);
-        await File.WriteAllTextAsync(resolved.JsonPath, json, cts.Token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(resolved.JsonPath, json, cancellationToken).ConfigureAwait(false);
     }
 
     EndStep(verbosity, stepReports, "Report files written");
@@ -135,15 +224,27 @@ static async Task<int> RunAsync(string[] args)
     var stepScripts = StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
     var scripts = SqlFixScriptRenderer.Render(report);
     var combinedPath = Path.Combine(resolved.FixesDirectory, "all-fixes.sql");
-    await File.WriteAllTextAsync(combinedPath, scripts.CombinedScript, cts.Token).ConfigureAwait(false);
+    await File.WriteAllTextAsync(combinedPath, scripts.CombinedScript, cancellationToken).ConfigureAwait(false);
 
     foreach (var script in scripts.IndividualScripts)
     {
-        await File.WriteAllTextAsync(Path.Combine(resolved.FixesDirectory, script.Key), script.Value, cts.Token).ConfigureAwait(false);
+        await File.WriteAllTextAsync(Path.Combine(resolved.FixesDirectory, script.Key), script.Value, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.IndividualScripts.Count} individual scripts)");
+}
 
+static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
+{
+    Directory.CreateDirectory(resolved.OutputDirectory);
+    Directory.CreateDirectory(Path.GetDirectoryName(resolved.MarkdownPath) ?? resolved.OutputDirectory);
+    Directory.CreateDirectory(Path.GetDirectoryName(resolved.JsonPath) ?? resolved.OutputDirectory);
+    Directory.CreateDirectory(resolved.FixesDirectory);
+}
+
+static void PrintScanSummary(LogVerbosity verbosity, EffectiveRunOptions resolved, AuditReport report, TimeSpan duration)
+{
     var requiringWindow = report.Findings.Count(f => f.ServiceWindow.RequiresServiceWindow);
     var noWindow = report.Findings.Count - requiringWindow;
 
@@ -153,6 +254,7 @@ static async Task<int> RunAsync(string[] args)
     Console.WriteLine($"  Total findings      : {report.Findings.Count}");
     Console.WriteLine($"  Service window yes  : {requiringWindow}");
     Console.WriteLine($"  Service window no   : {noWindow}");
+
     foreach (var severity in report.SeverityCounts.OrderBy(kvp => kvp.Key))
     {
         Console.WriteLine($"  Severity {severity.Key,-9}: {severity.Value}");
@@ -165,7 +267,7 @@ static async Task<int> RunAsync(string[] args)
 
     Console.WriteLine($"  Suppressed findings : {report.SuppressionSummary.SuppressedFindings}");
     Console.WriteLine($"  Suppression rules   : {report.SuppressionSummary.ActiveRules} active, {report.SuppressionSummary.ExpiredRules} expired");
-    Console.WriteLine($"  Duration            : {runTimer.Elapsed:hh\\:mm\\:ss}");
+    Console.WriteLine($"  Duration            : {duration:hh\\:mm\\:ss}");
     PrintSeparator(verbosity);
 
     if (verbosity == LogVerbosity.Verbose)
@@ -184,14 +286,6 @@ static async Task<int> RunAsync(string[] args)
     }
 
     Console.WriteLine($"  SQL scripts     : {resolved.FixesDirectory}");
-
-    if (IsFailThresholdBreached(report, resolved.FailOnSeverity, out var threshold, out var matchingCount))
-    {
-        await Console.Error.WriteLineAsync($"Fail-on threshold hit: {threshold} ({matchingCount} finding(s) at or above threshold).").ConfigureAwait(false);
-        return 3;
-    }
-
-    return 0;
 }
 
 static bool IsFailThresholdBreached(AuditReport report, AuditSeverity? threshold, out AuditSeverity actualThreshold, out int matchingCount)
@@ -310,41 +404,26 @@ static void WriteLabel(string text, ConsoleColor color)
 
 static int HandleUnhandledException(Exception ex)
 {
-    if (ex is OperationCanceledException)
+    return ex switch
     {
-        Console.Error.WriteLine("Operation cancelled.");
-        return 130;
+        OperationCanceledException => PrintError("Operation cancelled.", details: null, exitCode: 130),
+        DbException dbException => HandleDatabaseException(dbException),
+        FileNotFoundException fileMissing => PrintError("Required file was not found.", fileMissing.Message, exitCode: 1),
+        IOException ioException => PrintError("I/O error while reading or writing files.", ioException.Message, exitCode: 1),
+        UnauthorizedAccessException unauthorized => PrintError("Permission error while accessing files or directories.", unauthorized.Message, exitCode: 1),
+        _ => PrintError("Unexpected error.", ex.Message, exitCode: 1),
+    };
+}
+
+static int PrintError(string message, string? details, int exitCode)
+{
+    Console.Error.WriteLine(message);
+    if (!string.IsNullOrWhiteSpace(details))
+    {
+        Console.Error.WriteLine($"Details: {details}");
     }
 
-    if (ex is DbException dbException)
-    {
-        return HandleDatabaseException(dbException);
-    }
-
-    if (ex is FileNotFoundException fileMissing)
-    {
-        Console.Error.WriteLine("Required file was not found.");
-        Console.Error.WriteLine($"Details: {fileMissing.Message}");
-        return 1;
-    }
-
-    if (ex is IOException ioException)
-    {
-        Console.Error.WriteLine("I/O error while reading or writing files.");
-        Console.Error.WriteLine($"Details: {ioException.Message}");
-        return 1;
-    }
-
-    if (ex is UnauthorizedAccessException unauthorized)
-    {
-        Console.Error.WriteLine("Permission error while accessing files or directories.");
-        Console.Error.WriteLine($"Details: {unauthorized.Message}");
-        return 1;
-    }
-
-    Console.Error.WriteLine("Unexpected error.");
-    Console.Error.WriteLine($"Details: {ex.Message}");
-    return 1;
+    return exitCode;
 }
 
 static int HandleDatabaseException(DbException ex)
