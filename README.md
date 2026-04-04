@@ -190,3 +190,7 @@ The wizard lets you pick:
 Each finding in the report includes severity, impact, recommendation, evidence, and service-window guidance.
 Reports also include check execution telemetry and suppression summary data.
 Markdown reports group findings by rule, include links from Check Execution to each rule section when findings exist, and add a `[^]` jump-to-top link on each finding header.
+
+## License
+
+MIT. See `LICENSE`.
