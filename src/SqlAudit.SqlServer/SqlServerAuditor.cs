@@ -40,6 +40,7 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
             CapturedAtUtc = DateTimeOffset.UtcNow,
             ExcludedSchemas = excludedSchemaList,
             ExcludedTables = excludedTableList,
+            TopResourceIntensiveQueries = snapshot.TopResourceIntensiveQueries,
             Findings = [.. runResult.Findings
                 .OrderBy(f => f.Severity)
                 .ThenBy(f => f.Category, StringComparer.Ordinal)

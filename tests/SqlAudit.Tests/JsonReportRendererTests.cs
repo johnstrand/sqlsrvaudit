@@ -33,6 +33,20 @@ public sealed class JsonReportRendererTests
                     Evidence = [new FindingEvidence("Rows", "1000")],
                 },
             ],
+            TopResourceIntensiveQueries =
+            [
+                new ResourceIntensiveQueryInfo(
+                    QueryHash: "0x1234",
+                    ExecutionCount: 12,
+                    TotalCpuMs: 500.5m,
+                    AverageCpuMs: 41.7m,
+                    TotalDurationMs: 1000.5m,
+                    AverageDurationMs: 83.4m,
+                    TotalLogicalReads: 40000,
+                    TotalLogicalWrites: 200,
+                    LastExecutionUtc: null,
+                    QueryText: "SELECT 1"),
+            ],
         };
 
         var json = JsonReportRenderer.Render(report);
@@ -43,5 +57,10 @@ public sealed class JsonReportRendererTests
 
         Assert.Equal("High", first.GetProperty("Severity").GetString());
         Assert.True(first.GetProperty("ServiceWindow").GetProperty("RequiresServiceWindow").GetBoolean());
+
+        var topQueries = document.RootElement.GetProperty("TopResourceIntensiveQueries");
+        var query = topQueries.EnumerateArray().First();
+        Assert.Equal("0x1234", query.GetProperty("QueryHash").GetString());
+        Assert.Equal(40000L, query.GetProperty("TotalLogicalReads").GetInt64());
     }
 }

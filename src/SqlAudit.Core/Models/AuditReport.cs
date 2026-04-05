@@ -2,7 +2,7 @@ namespace SqlAudit.Core.Models;
 
 public sealed class AuditReport
 {
-    public string SchemaVersion { get; init; } = "1.1";
+    public string SchemaVersion { get; init; } = "1.2";
 
     public required string ServerName { get; init; }
 
@@ -21,6 +21,8 @@ public sealed class AuditReport
     public IReadOnlyList<string> ExcludedSchemas { get; init; } = [];
 
     public IReadOnlyList<string> ExcludedTables { get; init; } = [];
+
+    public IReadOnlyList<ResourceIntensiveQueryInfo> TopResourceIntensiveQueries { get; init; } = [];
 
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 

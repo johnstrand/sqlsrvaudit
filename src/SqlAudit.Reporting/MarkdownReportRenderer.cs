@@ -17,6 +17,7 @@ public static class MarkdownReportRenderer
         WriteCheckExecution(sb, report);
         WriteQuickWins(sb, report);
         WriteTopRiskyObjects(sb, report);
+        WriteTopResourceIntensiveQueries(sb, report);
         WriteFindings(sb, report);
 
         return sb.ToString();
@@ -172,6 +173,49 @@ public static class MarkdownReportRenderer
         foreach (var entry in topRiskyObjects)
         {
             sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"| `{EscapeInline(entry.DatabaseObject)}` | {entry.Score} | {entry.Count} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteTopResourceIntensiveQueries(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Top Resource-Intensive Queries");
+        sb.AppendLine();
+
+        var topQueries = report.TopResourceIntensiveQueries
+            .OrderByDescending(query => query.TotalCpuMs)
+            .ThenByDescending(query => query.TotalLogicalReads)
+            .ThenBy(query => query.QueryHash, StringComparer.OrdinalIgnoreCase)
+            .Take(10)
+            .ToArray();
+
+        if (topQueries.Length == 0)
+        {
+            sb.AppendLine("No query runtime telemetry available.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Query Hash | Executions | Total CPU (ms) | Avg CPU (ms) | Total Reads | Last Exec (UTC) |");
+        sb.AppendLine("|---|---:|---:|---:|---:|---|");
+
+        foreach (var query in topQueries)
+        {
+            var lastExecution = query.LastExecutionUtc?.ToString("u", System.Globalization.CultureInfo.InvariantCulture) ?? "(n/a)";
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(query.QueryHash)}` | {query.ExecutionCount} | {query.TotalCpuMs:F2} | {query.AverageCpuMs:F2} | {query.TotalLogicalReads} | {EscapeInline(lastExecution)} |");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Query text snippets:");
+
+        foreach (var query in topQueries)
+        {
+            var queryText = string.IsNullOrWhiteSpace(query.QueryText)
+                ? "(statement text unavailable)"
+                : query.QueryText;
+            sb.AppendLine($"- `{EscapeInline(query.QueryHash)}` {EscapeInline(queryText)}");
         }
 
         sb.AppendLine();

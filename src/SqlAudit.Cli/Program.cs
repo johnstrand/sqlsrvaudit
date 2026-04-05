@@ -324,6 +324,7 @@ static AuditReport ApplySuppressionResult(AuditReport source, SuppressionOutcome
         CapturedAtUtc = source.CapturedAtUtc,
         ExcludedSchemas = source.ExcludedSchemas,
         ExcludedTables = source.ExcludedTables,
+        TopResourceIntensiveQueries = source.TopResourceIntensiveQueries,
         Findings = suppression.Findings,
         CheckExecutions = source.CheckExecutions,
         SuppressionSummary = suppression.Summary,

@@ -89,4 +89,38 @@ public sealed class MarkdownReportRendererTests
         Assert.True(idxPosition < statPosition);
         Assert.Contains("#### [Medium] Duplicate index definitions detected [^](#top)", markdown, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Render_IncludesTopResourceIntensiveQueries()
+    {
+        var report = new AuditReport
+        {
+            ServerName = "server01",
+            DatabaseName = "DbA",
+            Edition = "Developer Edition",
+            ProductVersion = "16.0",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            TopResourceIntensiveQueries =
+            [
+                new ResourceIntensiveQueryInfo(
+                    QueryHash: "0xABCD",
+                    ExecutionCount: 42,
+                    TotalCpuMs: 12500.45m,
+                    AverageCpuMs: 297.63m,
+                    TotalDurationMs: 23100.10m,
+                    AverageDurationMs: 550.00m,
+                    TotalLogicalReads: 1000000,
+                    TotalLogicalWrites: 120,
+                    LastExecutionUtc: new DateTimeOffset(2026, 4, 5, 12, 0, 0, TimeSpan.Zero),
+                    QueryText: "SELECT * FROM dbo.Orders WHERE OrderDate >= @P1"),
+            ],
+            Findings = [],
+        };
+
+        var markdown = MarkdownReportRenderer.Render(report);
+
+        Assert.Contains("### Top Resource-Intensive Queries", markdown, StringComparison.Ordinal);
+        Assert.Contains("| `0xABCD` | 42 | 12500.45 | 297.63 | 1000000 | 2026-04-05 12:00:00Z |", markdown, StringComparison.Ordinal);
+        Assert.Contains("- `0xABCD` SELECT * FROM dbo.Orders WHERE OrderDate >= @P1", markdown, StringComparison.Ordinal);
+    }
 }

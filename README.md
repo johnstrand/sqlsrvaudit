@@ -188,8 +188,8 @@ The wizard lets you pick:
 - Per-finding scripts: `audit-output/fixes/*.sql`
 
 Each finding in the report includes severity, impact, recommendation, evidence, and service-window guidance.
-Reports also include check execution telemetry and suppression summary data.
-Markdown reports group findings by rule, include links from Check Execution to each rule section when findings exist, and add a `[^]` jump-to-top link on each finding header.
+Reports also include check execution telemetry, suppression summary data, and top resource-intensive query telemetry (CPU/reads) when DMV permissions are available.
+Markdown reports group findings by rule, include links from Check Execution to each rule section when findings exist, add a `[^]` jump-to-top link on each finding header, and include a Top Resource-Intensive Queries section.
 
 ## License
 

@@ -31,6 +31,8 @@ public sealed class DatabaseSnapshot
     public required IReadOnlyList<StatisticsInfo> Statistics { get; init; }
 
     public required IReadOnlyList<IdentityColumnInfo> IdentityColumns { get; init; }
+
+    public IReadOnlyList<ResourceIntensiveQueryInfo> TopResourceIntensiveQueries { get; init; } = [];
 }
 
 public sealed record TableInfo(
@@ -116,3 +118,15 @@ public sealed record IdentityColumnInfo(
     decimal? LastValue,
     decimal MaxValue,
     decimal UsagePercent);
+
+public sealed record ResourceIntensiveQueryInfo(
+    string QueryHash,
+    long ExecutionCount,
+    decimal TotalCpuMs,
+    decimal AverageCpuMs,
+    decimal TotalDurationMs,
+    decimal AverageDurationMs,
+    long TotalLogicalReads,
+    long TotalLogicalWrites,
+    DateTimeOffset? LastExecutionUtc,
+    string QueryText);

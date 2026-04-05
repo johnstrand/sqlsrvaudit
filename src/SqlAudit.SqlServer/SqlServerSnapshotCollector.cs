@@ -41,6 +41,7 @@ public sealed class SqlServerSnapshotCollector
                 ? await ReadStatisticsAsync(connection, cancellationToken).ConfigureAwait(false)
                 : [],
             IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false),
+            TopResourceIntensiveQueries = await ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken).ConfigureAwait(false),
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
@@ -109,6 +110,7 @@ public sealed class SqlServerSnapshotCollector
             IdentityColumns = snapshot.IdentityColumns
                 .Where(identity => tableIds.Contains(identity.ObjectId))
                 .ToArray(),
+            TopResourceIntensiveQueries = snapshot.TopResourceIntensiveQueries,
         };
     }
 
@@ -639,6 +641,109 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Decimal(reader, "max_value"),
                 SqlRead.Decimal(reader, "usage_percent")),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<ResourceIntensiveQueryInfo>> ReadTopResourceIntensiveQueriesAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        if (!await HasQueryStatsPermissionAsync(connection, cancellationToken).ConfigureAwait(false))
+        {
+            return [];
+        }
+
+        const string sql = """
+            SELECT TOP (10)
+                COALESCE(CONVERT(varchar(34), qs.query_hash, 1), N'0x0') AS query_hash,
+                qs.execution_count,
+                CONVERT(decimal(19,2), qs.total_worker_time / 1000.0) AS total_cpu_ms,
+                CONVERT(decimal(19,2), CASE WHEN qs.execution_count = 0 THEN 0 ELSE (qs.total_worker_time * 1.0 / qs.execution_count) / 1000.0 END) AS average_cpu_ms,
+                CONVERT(decimal(19,2), qs.total_elapsed_time / 1000.0) AS total_duration_ms,
+                CONVERT(decimal(19,2), CASE WHEN qs.execution_count = 0 THEN 0 ELSE (qs.total_elapsed_time * 1.0 / qs.execution_count) / 1000.0 END) AS average_duration_ms,
+                qs.total_logical_reads,
+                qs.total_logical_writes,
+                qs.last_execution_time AS last_execution_utc,
+                SUBSTRING(
+                    st.text,
+                    (qs.statement_start_offset / 2) + 1,
+                    CASE
+                        WHEN qs.statement_end_offset = -1 OR qs.statement_end_offset < qs.statement_start_offset
+                            THEN (DATALENGTH(st.text) - qs.statement_start_offset) / 2 + 1
+                        ELSE (qs.statement_end_offset - qs.statement_start_offset) / 2 + 1
+                    END
+                ) AS query_text
+            FROM sys.dm_exec_query_stats qs
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+            WHERE st.dbid = DB_ID()
+            ORDER BY
+                qs.total_worker_time DESC,
+                qs.total_logical_reads DESC,
+                qs.execution_count DESC
+        """;
+
+        return await ReadListAsync(connection, sql,
+            reader => new ResourceIntensiveQueryInfo(
+                SqlRead.String(reader, "query_hash"),
+                SqlRead.Long(reader, "execution_count"),
+                SqlRead.Decimal(reader, "total_cpu_ms"),
+                SqlRead.Decimal(reader, "average_cpu_ms"),
+                SqlRead.Decimal(reader, "total_duration_ms"),
+                SqlRead.Decimal(reader, "average_duration_ms"),
+                SqlRead.Long(reader, "total_logical_reads"),
+                SqlRead.Long(reader, "total_logical_writes"),
+                SqlRead.NullableDateTimeOffset(reader, "last_execution_utc"),
+                NormalizeQueryText(SqlRead.String(reader, "query_text"))),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> HasQueryStatsPermissionAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT CASE
+                       WHEN HAS_PERMS_BY_NAME(DB_NAME(), 'DATABASE', 'VIEW DATABASE STATE') = 1
+                            OR HAS_PERMS_BY_NAME(NULL, NULL, 'VIEW SERVER STATE') = 1
+                           THEN 1
+                       ELSE 0
+                   END
+        """;
+
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30,
+        };
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (result is null || result is DBNull)
+        {
+            return false;
+        }
+
+        return result switch
+        {
+            bool value => value,
+            byte value => value == 1,
+            short value => value == 1,
+            int value => value == 1,
+            long value => value == 1,
+            _ => Convert.ToBoolean(result, CultureInfo.InvariantCulture),
+        };
+    }
+
+    private static string NormalizeQueryText(string queryText)
+    {
+        const int maxLength = 300;
+
+        var normalized = string.Join(
+            ' ',
+            queryText
+                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        return string.Concat(normalized.AsSpan(0, maxLength), "...");
     }
 
     private static async Task<IReadOnlyList<T>> ReadListAsync<T>(
