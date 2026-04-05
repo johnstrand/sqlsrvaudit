@@ -15,6 +15,11 @@ We make bold architectural choices first and let reality file bug reports later.
 - Statistics: stale stats, `AUTO_CREATE_STATISTICS` / `AUTO_UPDATE_STATISTICS`, and `NORECOMPUTE` usage
 - Configuration: database compatibility level aligned with current server version
 - Capacity: identity exhaustion risk
+- Runtime pressure: top resource-intensive queries, wait-stat breakdown, active blocking, and deadlock summary
+- Optimizer opportunities: Query Store regressions and guarded missing-index signals
+- Operational posture: log/VLF health, tempdb usage, file autogrowth settings, and backup recency
+- Security hygiene: orphan users, `db_owner` membership, and risky `public` grants
+- Growth trend: cross-run table growth forecasting when prior `data-model.json` exists
 
 ## Profiles
 

@@ -2,6 +2,8 @@ namespace SqlAudit.Core.Models;
 
 public sealed class DatabaseSnapshot
 {
+    public DateTimeOffset CapturedAtUtc { get; init; }
+
     public required string ServerName { get; init; }
 
     public required string DatabaseName { get; init; }
@@ -33,6 +35,26 @@ public sealed class DatabaseSnapshot
     public required IReadOnlyList<IdentityColumnInfo> IdentityColumns { get; init; }
 
     public IReadOnlyList<ResourceIntensiveQueryInfo> TopResourceIntensiveQueries { get; init; } = [];
+
+    public IReadOnlyList<WaitStatInfo> TopWaitStats { get; init; } = [];
+
+    public IReadOnlyList<QueryStoreRegressionInfo> QueryStoreRegressions { get; init; } = [];
+
+    public IReadOnlyList<BlockingSessionInfo> ActiveBlockingSessions { get; init; } = [];
+
+    public DeadlockSummaryInfo? DeadlockSummary { get; init; }
+
+    public IReadOnlyList<MissingIndexSignalInfo> MissingIndexSignals { get; init; } = [];
+
+    public LogHealthInfo? LogHealth { get; init; }
+
+    public TempDbPressureInfo? TempDbPressure { get; init; }
+
+    public IReadOnlyList<FileGrowthHealthInfo> FileGrowthHealth { get; init; } = [];
+
+    public BackupPostureInfo? BackupPosture { get; init; }
+
+    public IReadOnlyList<SecurityHygieneIssueInfo> SecurityHygieneIssues { get; init; } = [];
 }
 
 public sealed record TableInfo(
@@ -130,3 +152,98 @@ public sealed record ResourceIntensiveQueryInfo(
     long TotalLogicalWrites,
     DateTimeOffset? LastExecutionUtc,
     string QueryText);
+
+public sealed record WaitStatInfo(
+    string WaitType,
+    long WaitingTasksCount,
+    decimal WaitTimeSeconds,
+    decimal ResourceWaitSeconds,
+    decimal SignalWaitSeconds,
+    decimal AverageWaitMs,
+    string Category);
+
+public sealed record QueryStoreRegressionInfo(
+    long QueryId,
+    decimal BaselineAverageDurationMs,
+    decimal RecentAverageDurationMs,
+    decimal RegressionRatio,
+    long RecentExecutions,
+    DateTimeOffset? LastExecutionUtc,
+    string QueryText);
+
+public sealed record BlockingSessionInfo(
+    int BlockingSessionId,
+    int BlockedSessionId,
+    string WaitType,
+    long WaitDurationMs,
+    string WaitResource,
+    string QueryText);
+
+public sealed record DeadlockSummaryInfo(
+    long DeadlockCountLast24Hours,
+    DateTimeOffset? LastDeadlockUtc);
+
+public sealed record MissingIndexSignalInfo(
+    int ObjectId,
+    string SchemaName,
+    string TableName,
+    string EqualityColumns,
+    string InequalityColumns,
+    string IncludedColumns,
+    long UserSeeks,
+    long UserScans,
+    decimal AverageTotalCost,
+    decimal AverageUserImpactPercent,
+    decimal EstimatedBenefit,
+    int ExistingIndexCount,
+    string GuardrailNote);
+
+public sealed record LogHealthInfo(
+    decimal TotalLogSizeMb,
+    decimal UsedLogSizeMb,
+    decimal UsedLogPercent,
+    int VlfCount,
+    long LongestActiveTransactionMinutes,
+    string LogReuseWaitDescription);
+
+public sealed record TempDbPressureInfo(
+    decimal VersionStoreMb,
+    decimal UserObjectMb,
+    decimal InternalObjectMb,
+    decimal UnallocatedMb);
+
+public sealed record FileGrowthHealthInfo(
+    int FileId,
+    string LogicalName,
+    string FileType,
+    string PhysicalPath,
+    decimal SizeMb,
+    bool IsPercentGrowth,
+    decimal GrowthValue,
+    decimal? MaxSizeMb,
+    string GrowthDescription,
+    string Advisory);
+
+public sealed record BackupPostureInfo(
+    string RecoveryModel,
+    DateTimeOffset? LastFullBackupUtc,
+    DateTimeOffset? LastDifferentialBackupUtc,
+    DateTimeOffset? LastLogBackupUtc,
+    decimal? FullBackupAgeHours,
+    decimal? DifferentialBackupAgeHours,
+    decimal? LogBackupAgeHours);
+
+public sealed record SecurityHygieneIssueInfo(
+    string IssueType,
+    AuditSeverity Severity,
+    string Principal,
+    string Details);
+
+public sealed record TableGrowthForecastInfo(
+    string DatabaseObject,
+    decimal PreviousReservedMb,
+    decimal CurrentReservedMb,
+    decimal DeltaReservedMb,
+    decimal ElapsedDays,
+    decimal Projected30DayReservedMb,
+    decimal Projected90DayReservedMb);

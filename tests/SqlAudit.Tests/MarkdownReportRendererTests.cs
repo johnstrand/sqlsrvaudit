@@ -123,4 +123,63 @@ public sealed class MarkdownReportRendererTests
         Assert.Contains("| `0xABCD` | 42 | 12500.45 | 297.63 | 1000000 | 2026-04-05 12:00:00Z |", markdown, StringComparison.Ordinal);
         Assert.Contains("- `0xABCD` SELECT * FROM dbo.Orders WHERE OrderDate >= @P1", markdown, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Render_IncludesExtendedOperationalTelemetrySections()
+    {
+        var report = new AuditReport
+        {
+            ServerName = "server01",
+            DatabaseName = "DbA",
+            Edition = "Developer Edition",
+            ProductVersion = "16.0",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            TopWaitStats =
+            [
+                new WaitStatInfo("LCK_M_X", 4, 120.0m, 110.0m, 10.0m, 30000.0m, "Locking"),
+            ],
+            QueryStoreRegressions =
+            [
+                new QueryStoreRegressionInfo(11, 20.0m, 50.0m, 2.5m, 100, null, "SELECT 1"),
+            ],
+            DeadlockSummary = new DeadlockSummaryInfo(2, null),
+            ActiveBlockingSessions =
+            [
+                new BlockingSessionInfo(55, 56, "LCK_M_S", 9000, "KEY", "SELECT * FROM dbo.T"),
+            ],
+            MissingIndexSignals =
+            [
+                new MissingIndexSignalInfo(1, "dbo", "Orders", "[CustomerId]", string.Empty, "[OrderDate]", 400, 10, 120.0m, 95.0m, 49020.0m, 3, "Signal passes read-benefit guardrails."),
+            ],
+            LogHealth = new LogHealthInfo(2048m, 1536m, 75m, 150, 12, "ACTIVE_TRANSACTION"),
+            TempDbPressure = new TempDbPressureInfo(256m, 128m, 64m, 512m),
+            FileGrowthHealth =
+            [
+                new FileGrowthHealthInfo(1, "DbA", "ROWS", "C:\\Data\\DbA.mdf", 1024m, false, 64m, null, "64 MB", "Growth setting looks reasonable."),
+            ],
+            BackupPosture = new BackupPostureInfo("FULL", null, null, null, 12m, 4m, 1m),
+            SecurityHygieneIssues =
+            [
+                new SecurityHygieneIssueInfo("DbOwnerMembership", AuditSeverity.Medium, "legacy_user", "Principal is member of db_owner role."),
+            ],
+            TableGrowthForecasts =
+            [
+                new TableGrowthForecastInfo("[dbo].[Orders]", 500m, 650m, 150m, 10m, 1100m, 2000m),
+            ],
+            Findings = [],
+        };
+
+        var markdown = MarkdownReportRenderer.Render(report);
+
+        Assert.Contains("### Wait Stats Breakdown", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Query Store Regressions", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Blocking and Deadlocks", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Missing Index Signals", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Log Health", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Tempdb Pressure", markdown, StringComparison.Ordinal);
+        Assert.Contains("### File Growth Health", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Backup and Restore Posture", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Security Hygiene", markdown, StringComparison.Ordinal);
+        Assert.Contains("### Growth Forecasting", markdown, StringComparison.Ordinal);
+    }
 }

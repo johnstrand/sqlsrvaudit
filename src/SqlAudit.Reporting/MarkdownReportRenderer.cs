@@ -18,6 +18,16 @@ public static class MarkdownReportRenderer
         WriteQuickWins(sb, report);
         WriteTopRiskyObjects(sb, report);
         WriteTopResourceIntensiveQueries(sb, report);
+        WriteTopWaitStats(sb, report);
+        WriteQueryStoreRegressions(sb, report);
+        WriteBlockingAndDeadlocks(sb, report);
+        WriteMissingIndexSignals(sb, report);
+        WriteLogHealth(sb, report);
+        WriteTempDbPressure(sb, report);
+        WriteFileGrowthHealth(sb, report);
+        WriteBackupPosture(sb, report);
+        WriteSecurityHygiene(sb, report);
+        WriteGrowthForecasts(sb, report);
         WriteFindings(sb, report);
 
         return sb.ToString();
@@ -221,6 +231,246 @@ public static class MarkdownReportRenderer
         sb.AppendLine();
     }
 
+    private static void WriteTopWaitStats(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Wait Stats Breakdown");
+        sb.AppendLine();
+
+        if (report.TopWaitStats.Count == 0)
+        {
+            sb.AppendLine("No wait-stat telemetry available.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Wait Type | Category | Wait (s) | Signal (s) | Tasks | Avg Wait (ms) |");
+        sb.AppendLine("|---|---|---:|---:|---:|---:|");
+
+        foreach (var wait in report.TopWaitStats.Take(12))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(wait.WaitType)}` | {EscapeInline(wait.Category)} | {wait.WaitTimeSeconds:F2} | {wait.SignalWaitSeconds:F2} | {wait.WaitingTasksCount} | {wait.AverageWaitMs:F2} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteQueryStoreRegressions(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Query Store Regressions");
+        sb.AppendLine();
+
+        if (report.QueryStoreRegressions.Count == 0)
+        {
+            sb.AppendLine("No significant Query Store regressions detected.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Query Id | Baseline Avg (ms) | Recent Avg (ms) | Ratio | Recent Execs |");
+        sb.AppendLine("|---:|---:|---:|---:|---:|");
+
+        foreach (var regression in report.QueryStoreRegressions.Take(10))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| {regression.QueryId} | {regression.BaselineAverageDurationMs:F2} | {regression.RecentAverageDurationMs:F2} | {regression.RegressionRatio:F2}x | {regression.RecentExecutions} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteBlockingAndDeadlocks(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Blocking and Deadlocks");
+        sb.AppendLine();
+
+        if (report.DeadlockSummary is null)
+        {
+            sb.AppendLine("- Deadlocks (24h): (unavailable)");
+        }
+        else
+        {
+            var deadlockLastSeen = report.DeadlockSummary.LastDeadlockUtc?.ToString("u", System.Globalization.CultureInfo.InvariantCulture) ?? "(n/a)";
+            sb.AppendLine($"- Deadlocks (24h): {report.DeadlockSummary.DeadlockCountLast24Hours}");
+            sb.AppendLine($"- Last deadlock (UTC): {EscapeInline(deadlockLastSeen)}");
+        }
+
+        sb.AppendLine();
+
+        if (report.ActiveBlockingSessions.Count == 0)
+        {
+            sb.AppendLine("No active blocking chains observed at capture time.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Blocking SPID | Blocked SPID | Wait Type | Wait (ms) | Resource |");
+        sb.AppendLine("|---:|---:|---|---:|---|");
+
+        foreach (var block in report.ActiveBlockingSessions.Take(10))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| {block.BlockingSessionId} | {block.BlockedSessionId} | {EscapeInline(block.WaitType)} | {block.WaitDurationMs} | {EscapeInline(block.WaitResource)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteMissingIndexSignals(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Missing Index Signals");
+        sb.AppendLine();
+
+        if (report.MissingIndexSignals.Count == 0)
+        {
+            sb.AppendLine("No high-confidence missing-index signals found.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Table | Seeks+Scans | Est. Benefit | Existing Indexes | Guardrail |");
+        sb.AppendLine("|---|---:|---:|---:|---|");
+
+        foreach (var signal in report.MissingIndexSignals.Take(15))
+        {
+            var table = $"[{signal.SchemaName}].[{signal.TableName}]";
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(table)}` | {signal.UserSeeks + signal.UserScans} | {signal.EstimatedBenefit:F2} | {signal.ExistingIndexCount} | {EscapeInline(signal.GuardrailNote)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteLogHealth(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Log Health");
+        sb.AppendLine();
+
+        if (report.LogHealth is null)
+        {
+            sb.AppendLine("No transaction-log health telemetry available.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Total log size (MB): {report.LogHealth.TotalLogSizeMb:F2}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Used log size (MB): {report.LogHealth.UsedLogSizeMb:F2}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Used log (%): {report.LogHealth.UsedLogPercent:F2}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- VLF count: {report.LogHealth.VlfCount}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Longest active transaction (min): {report.LogHealth.LongestActiveTransactionMinutes}");
+        sb.AppendLine($"- Log reuse wait: `{EscapeInline(report.LogHealth.LogReuseWaitDescription)}`");
+        sb.AppendLine();
+    }
+
+    private static void WriteTempDbPressure(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Tempdb Pressure");
+        sb.AppendLine();
+
+        if (report.TempDbPressure is null)
+        {
+            sb.AppendLine("No tempdb pressure telemetry available.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Version store (MB): {report.TempDbPressure.VersionStoreMb:F2}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- User objects (MB): {report.TempDbPressure.UserObjectMb:F2}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Internal objects (MB): {report.TempDbPressure.InternalObjectMb:F2}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Unallocated (MB): {report.TempDbPressure.UnallocatedMb:F2}");
+        sb.AppendLine();
+    }
+
+    private static void WriteFileGrowthHealth(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### File Growth Health");
+        sb.AppendLine();
+
+        if (report.FileGrowthHealth.Count == 0)
+        {
+            sb.AppendLine("No file growth telemetry available.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| File | Type | Size (MB) | Growth | Advisory |");
+        sb.AppendLine("|---|---|---:|---|---|");
+
+        foreach (var file in report.FileGrowthHealth.Take(20))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(file.LogicalName)}` | {EscapeInline(file.FileType)} | {file.SizeMb:F2} | {EscapeInline(file.GrowthDescription)} | {EscapeInline(file.Advisory)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteBackupPosture(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Backup and Restore Posture");
+        sb.AppendLine();
+
+        if (report.BackupPosture is null)
+        {
+            sb.AppendLine("No backup posture telemetry available.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine($"- Recovery model: `{EscapeInline(report.BackupPosture.RecoveryModel)}`");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Last full backup age (hours): {FormatNullableDecimal(report.BackupPosture.FullBackupAgeHours)}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Last diff backup age (hours): {FormatNullableDecimal(report.BackupPosture.DifferentialBackupAgeHours)}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Last log backup age (hours): {FormatNullableDecimal(report.BackupPosture.LogBackupAgeHours)}");
+        sb.AppendLine();
+    }
+
+    private static void WriteSecurityHygiene(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Security Hygiene");
+        sb.AppendLine();
+
+        if (report.SecurityHygieneIssues.Count == 0)
+        {
+            sb.AppendLine("No obvious security hygiene issues were detected.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Severity | Issue | Principal | Details |");
+        sb.AppendLine("|---|---|---|---|");
+
+        foreach (var issue in report.SecurityHygieneIssues.Take(25))
+        {
+            sb.AppendLine($"| {issue.Severity} | {EscapeInline(issue.IssueType)} | `{EscapeInline(issue.Principal)}` | {EscapeInline(issue.Details)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteGrowthForecasts(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Growth Forecasting");
+        sb.AppendLine();
+
+        if (report.TableGrowthForecasts.Count == 0)
+        {
+            sb.AppendLine("No multi-run growth forecast available yet (or growth delta is below threshold).");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Object | Delta (MB) | Days | Projected 30d (MB) | Projected 90d (MB) |");
+        sb.AppendLine("|---|---:|---:|---:|---:|");
+
+        foreach (var forecast in report.TableGrowthForecasts.Take(15))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(forecast.DatabaseObject)}` | {forecast.DeltaReservedMb:F2} | {forecast.ElapsedDays:F1} | {forecast.Projected30DayReservedMb:F2} | {forecast.Projected90DayReservedMb:F2} |");
+        }
+
+        sb.AppendLine();
+    }
+
     private static void WriteFindings(StringBuilder sb, AuditReport report)
     {
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"Total findings: **{report.Findings.Count}**");
@@ -316,6 +566,13 @@ public static class MarkdownReportRenderer
         }
 
         return string.Join(", ", values.Select(value => $"`{EscapeInline(value)}`"));
+    }
+
+    private static string FormatNullableDecimal(decimal? value)
+    {
+        return value.HasValue
+            ? value.Value.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+            : "(n/a)";
     }
 
     private static string GetRuleId(string findingId)

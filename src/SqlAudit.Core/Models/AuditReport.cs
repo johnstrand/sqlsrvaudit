@@ -2,7 +2,7 @@ namespace SqlAudit.Core.Models;
 
 public sealed class AuditReport
 {
-    public string SchemaVersion { get; init; } = "1.2";
+    public string SchemaVersion { get; init; } = "1.3";
 
     public required string ServerName { get; init; }
 
@@ -23,6 +23,28 @@ public sealed class AuditReport
     public IReadOnlyList<string> ExcludedTables { get; init; } = [];
 
     public IReadOnlyList<ResourceIntensiveQueryInfo> TopResourceIntensiveQueries { get; init; } = [];
+
+    public IReadOnlyList<WaitStatInfo> TopWaitStats { get; init; } = [];
+
+    public IReadOnlyList<QueryStoreRegressionInfo> QueryStoreRegressions { get; init; } = [];
+
+    public IReadOnlyList<BlockingSessionInfo> ActiveBlockingSessions { get; init; } = [];
+
+    public DeadlockSummaryInfo? DeadlockSummary { get; init; }
+
+    public IReadOnlyList<MissingIndexSignalInfo> MissingIndexSignals { get; init; } = [];
+
+    public LogHealthInfo? LogHealth { get; init; }
+
+    public TempDbPressureInfo? TempDbPressure { get; init; }
+
+    public IReadOnlyList<FileGrowthHealthInfo> FileGrowthHealth { get; init; } = [];
+
+    public BackupPostureInfo? BackupPosture { get; init; }
+
+    public IReadOnlyList<SecurityHygieneIssueInfo> SecurityHygieneIssues { get; init; } = [];
+
+    public IReadOnlyList<TableGrowthForecastInfo> TableGrowthForecasts { get; init; } = [];
 
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 

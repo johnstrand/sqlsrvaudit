@@ -5,6 +5,7 @@ using SqlAudit.Reporting;
 using SqlAudit.SqlServer;
 using System.Data.Common;
 using System.Diagnostics;
+using System.Text.Json;
 
 int exitCode;
 try
@@ -103,7 +104,8 @@ static async Task<int> RunScanCommandAsync(CliOptions options)
     await RunPreflightAsync(verbosity, resolved.ConnectionString, cts.Token).ConfigureAwait(false);
 
     var auditRun = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
-    var report = ApplySuppressions(verbosity, auditRun.Report, resolved.SuppressionsPath);
+    var reportWithForecasts = AttachGrowthForecasts(auditRun.Report, resolved.DataModelPath, auditRun.Snapshot);
+    var report = ApplySuppressions(verbosity, reportWithForecasts, resolved.SuppressionsPath);
 
     await WriteOutputsAsync(verbosity, resolved, report, auditRun.Snapshot, cts.Token).ConfigureAwait(false);
     PrintScanSummary(verbosity, resolved, report, runTimer.Elapsed);
@@ -339,10 +341,134 @@ static AuditReport ApplySuppressionResult(AuditReport source, SuppressionOutcome
         ExcludedSchemas = source.ExcludedSchemas,
         ExcludedTables = source.ExcludedTables,
         TopResourceIntensiveQueries = source.TopResourceIntensiveQueries,
+        TopWaitStats = source.TopWaitStats,
+        QueryStoreRegressions = source.QueryStoreRegressions,
+        ActiveBlockingSessions = source.ActiveBlockingSessions,
+        DeadlockSummary = source.DeadlockSummary,
+        MissingIndexSignals = source.MissingIndexSignals,
+        LogHealth = source.LogHealth,
+        TempDbPressure = source.TempDbPressure,
+        FileGrowthHealth = source.FileGrowthHealth,
+        BackupPosture = source.BackupPosture,
+        SecurityHygieneIssues = source.SecurityHygieneIssues,
+        TableGrowthForecasts = source.TableGrowthForecasts,
         Findings = suppression.Findings,
         CheckExecutions = source.CheckExecutions,
         SuppressionSummary = suppression.Summary,
     };
+}
+
+static AuditReport AttachGrowthForecasts(AuditReport report, string dataModelPath, DatabaseSnapshot currentSnapshot)
+{
+    var previousSnapshot = TryLoadSnapshot(dataModelPath);
+    if (previousSnapshot is null)
+    {
+        return report;
+    }
+
+    var forecasts = BuildGrowthForecasts(previousSnapshot, currentSnapshot);
+    if (forecasts.Count == 0)
+    {
+        return report;
+    }
+
+    return new AuditReport
+    {
+        SchemaVersion = report.SchemaVersion,
+        ServerName = report.ServerName,
+        DatabaseName = report.DatabaseName,
+        Edition = report.Edition,
+        ProductVersion = report.ProductVersion,
+        CapturedAtUtc = report.CapturedAtUtc,
+        ExcludedSchemas = report.ExcludedSchemas,
+        ExcludedTables = report.ExcludedTables,
+        TopResourceIntensiveQueries = report.TopResourceIntensiveQueries,
+        TopWaitStats = report.TopWaitStats,
+        QueryStoreRegressions = report.QueryStoreRegressions,
+        ActiveBlockingSessions = report.ActiveBlockingSessions,
+        DeadlockSummary = report.DeadlockSummary,
+        MissingIndexSignals = report.MissingIndexSignals,
+        LogHealth = report.LogHealth,
+        TempDbPressure = report.TempDbPressure,
+        FileGrowthHealth = report.FileGrowthHealth,
+        BackupPosture = report.BackupPosture,
+        SecurityHygieneIssues = report.SecurityHygieneIssues,
+        TableGrowthForecasts = forecasts,
+        Findings = report.Findings,
+        CheckExecutions = report.CheckExecutions,
+        SuppressionSummary = report.SuppressionSummary,
+    };
+}
+
+static DatabaseSnapshot? TryLoadSnapshot(string dataModelPath)
+{
+    if (!File.Exists(dataModelPath))
+    {
+        return null;
+    }
+
+    try
+    {
+        var json = File.ReadAllText(dataModelPath);
+        return JsonSerializer.Deserialize<DatabaseSnapshot>(json);
+    }
+    catch (Exception)
+    {
+        return null;
+    }
+}
+
+static IReadOnlyList<TableGrowthForecastInfo> BuildGrowthForecasts(DatabaseSnapshot previous, DatabaseSnapshot current)
+{
+    var previousCaptured = previous.CapturedAtUtc;
+    if (previousCaptured == default)
+    {
+        return [];
+    }
+
+    var elapsedDays = Math.Max(0, (current.CapturedAtUtc - previousCaptured).TotalDays);
+    if (elapsedDays < 1)
+    {
+        return [];
+    }
+
+    var previousByTable = previous.Tables
+        .ToDictionary(
+            table => $"{table.SchemaName}.{table.TableName}",
+            table => table,
+            StringComparer.OrdinalIgnoreCase);
+
+    var forecasts = current.Tables
+        .Where(table => previousByTable.ContainsKey($"{table.SchemaName}.{table.TableName}"))
+        .Select(table =>
+        {
+            var key = $"{table.SchemaName}.{table.TableName}";
+            var previousTable = previousByTable[key];
+            var previousMb = previousTable.ReservedMb;
+            var currentMb = table.ReservedMb;
+            var deltaMb = currentMb - previousMb;
+            if (deltaMb <= 10m)
+            {
+                return null;
+            }
+
+            var growthPerDay = deltaMb / Convert.ToDecimal(elapsedDays, System.Globalization.CultureInfo.InvariantCulture);
+            return new TableGrowthForecastInfo(
+                $"[{table.SchemaName}].[{table.TableName}]",
+                previousMb,
+                currentMb,
+                deltaMb,
+                Convert.ToDecimal(elapsedDays, System.Globalization.CultureInfo.InvariantCulture),
+                currentMb + (growthPerDay * 30m),
+                currentMb + (growthPerDay * 90m));
+        })
+        .Where(forecast => forecast is not null)
+        .Select(forecast => forecast!)
+        .OrderByDescending(forecast => forecast.DeltaReservedMb)
+        .Take(15)
+        .ToArray();
+
+    return forecasts;
 }
 
 static void PrintCheckExecutions(IReadOnlyList<CheckExecutionResult> executions, LogVerbosity verbosity)
