@@ -4,11 +4,33 @@ using SqlAudit.Core.Models;
 
 namespace SqlAudit.SqlServer;
 
+public sealed record SqlServerAuditRunResult(DatabaseSnapshot Snapshot, AuditReport Report);
+
 public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
 {
     private readonly IReadOnlyCollection<IHealthCheck>? customChecks = checks?.ToArray();
 
     public async Task<AuditReport> RunAsync(
+        string connectionString,
+        AuditOptions? options = null,
+        AuditProfile profile = AuditProfile.Deep,
+        IReadOnlyCollection<string>? excludedSchemas = null,
+        IReadOnlyCollection<string>? excludedTables = null,
+        CancellationToken cancellationToken = default)
+    {
+        var run = await RunWithSnapshotAsync(
+                connectionString,
+                options,
+                profile,
+                excludedSchemas,
+                excludedTables,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return run.Report;
+    }
+
+    public async Task<SqlServerAuditRunResult> RunWithSnapshotAsync(
         string connectionString,
         AuditOptions? options = null,
         AuditProfile profile = AuditProfile.Deep,
@@ -31,7 +53,7 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         var excludedSchemaList = excludedSchemas?.ToArray() ?? [];
         var excludedTableList = excludedTables?.ToArray() ?? [];
 
-        return new AuditReport
+        var report = new AuditReport
         {
             ServerName = snapshot.ServerName,
             DatabaseName = snapshot.DatabaseName,
@@ -48,5 +70,7 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
             CheckExecutions = [.. runResult.CheckExecutions.OrderBy(c => c.CheckId, StringComparer.OrdinalIgnoreCase)],
             SuppressionSummary = new SuppressionSummary(0, 0, 0, 0, runResult.Findings.Count),
         };
+
+        return new SqlServerAuditRunResult(snapshot, report);
     }
 }

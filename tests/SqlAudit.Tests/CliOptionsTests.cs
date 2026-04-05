@@ -16,6 +16,7 @@ public sealed class CliOptionsTests
             "--checks", "PK-001,IDX-001",
             "--config", "project-config/sqlaudit.quick.json",
             "--suppressions", "sqlaudit.suppressions.json",
+            "--output-data-model",
             "--fail-on", "high",
             "--verbose",
             "--stats-min-mods", "1234",
@@ -30,6 +31,7 @@ public sealed class CliOptionsTests
         Assert.Equal(2, result.Options.ActiveCheckIds!.Count);
         Assert.Equal("project-config/sqlaudit.quick.json", result.Options.ConfigPath);
         Assert.Equal("sqlaudit.suppressions.json", result.Options.SuppressionsPath);
+        Assert.True(result.Options.OutputDataModel);
         Assert.Equal(AuditSeverity.High, result.Options.FailOnSeverity);
         Assert.Equal(LogVerbosity.Verbose, result.Options.Verbosity);
         Assert.Equal(1234, result.Options.AuditOptionOverrides.StaleStatsMinModifications);

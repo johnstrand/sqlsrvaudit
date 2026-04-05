@@ -47,6 +47,7 @@ Useful runtime flags:
 - `--verbose` for detailed runtime output and per-check timing table
 - `--quiet` for minimal console output
 - `--fail-on <severity>` to return non-zero when findings meet a CI threshold
+- `--output-data-model` to also emit full filtered metadata snapshot JSON
 
 Example CI gate:
 
@@ -90,6 +91,7 @@ You can ignore specific schemas/tables in config with `excludeSchemas` and `excl
 
 ```json
 {
+  "outputDataModel": true,
   "excludeSchemas": ["archive", "etl_staging"],
   "excludeTables": ["Book_Backup", "dbo.Legacy_Book_Backup"]
 }
@@ -184,6 +186,7 @@ The wizard lets you pick:
 
 - Markdown report: `audit-output/report.md`
 - JSON report: `audit-output/report.json`
+- Full data model JSON (optional): `audit-output/data-model.json`
 - Combined fix script: `audit-output/fixes/all-fixes.sql`
 - Per-finding scripts: `audit-output/fixes/*.sql`
 

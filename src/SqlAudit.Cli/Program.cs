@@ -102,10 +102,10 @@ static async Task<int> RunScanCommandAsync(CliOptions options)
     using var cts = CreateCancellationTokenSource();
     await RunPreflightAsync(verbosity, resolved.ConnectionString, cts.Token).ConfigureAwait(false);
 
-    var report = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
-    report = ApplySuppressions(verbosity, report, resolved.SuppressionsPath);
+    var auditRun = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
+    var report = ApplySuppressions(verbosity, auditRun.Report, resolved.SuppressionsPath);
 
-    await WriteOutputsAsync(verbosity, resolved, report, cts.Token).ConfigureAwait(false);
+    await WriteOutputsAsync(verbosity, resolved, report, auditRun.Snapshot, cts.Token).ConfigureAwait(false);
     PrintScanSummary(verbosity, resolved, report, runTimer.Elapsed);
 
     if (IsFailThresholdBreached(report, resolved.FailOnSeverity, out var threshold, out var matchingCount))
@@ -138,6 +138,7 @@ static void PrintRunConfiguration(LogVerbosity verbosity, EffectiveRunOptions re
 {
     PrintLine(verbosity, LogVerbosity.Normal, $"  Profile      : {resolved.Profile.ToString().ToLowerInvariant()}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output format: {resolved.Format.ToString().ToLowerInvariant()}");
+    PrintLine(verbosity, LogVerbosity.Normal, $"  Data model   : {(resolved.OutputDataModel ? "enabled" : "disabled")}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Active checks: {activeChecks}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Output dir   : {resolved.OutputDirectory}");
     PrintLine(verbosity, LogVerbosity.Normal, $"  Suppressions : {resolved.SuppressionsPath ?? "(none)"}");
@@ -170,7 +171,7 @@ static async Task RunPreflightAsync(LogVerbosity verbosity, string connectionStr
     EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
 }
 
-static async Task<AuditReport> RunAuditAsync(
+static async Task<SqlServerAuditRunResult> RunAuditAsync(
     LogVerbosity verbosity,
     EffectiveRunOptions resolved,
     IReadOnlyCollection<SqlAudit.Core.Abstractions.IHealthCheck> checks,
@@ -180,7 +181,7 @@ static async Task<AuditReport> RunAuditAsync(
     PrintLine(verbosity, LogVerbosity.Normal, "      Collecting metadata and evaluating checks...");
 
     var auditor = new SqlServerAuditor(checks);
-    var report = await auditor.RunAsync(
+    var run = await auditor.RunWithSnapshotAsync(
             resolved.ConnectionString,
             resolved.AuditOptions,
             resolved.Profile,
@@ -189,8 +190,8 @@ static async Task<AuditReport> RunAuditAsync(
             cancellationToken)
         .ConfigureAwait(false);
 
-    EndStep(verbosity, stepAudit, $"Analysis complete ({report.Findings.Count} findings)");
-    return report;
+    EndStep(verbosity, stepAudit, $"Analysis complete ({run.Report.Findings.Count} findings)");
+    return run;
 }
 
 static AuditReport ApplySuppressions(LogVerbosity verbosity, AuditReport report, string? suppressionsPath)
@@ -212,6 +213,7 @@ static async Task WriteOutputsAsync(
     LogVerbosity verbosity,
     EffectiveRunOptions resolved,
     AuditReport report,
+    DatabaseSnapshot snapshot,
     CancellationToken cancellationToken)
 {
     var stepReports = StartStep(verbosity, 5, 6, "Render report files");
@@ -227,6 +229,12 @@ static async Task WriteOutputsAsync(
     {
         var json = JsonReportRenderer.Render(report);
         await File.WriteAllTextAsync(resolved.JsonPath, json, cancellationToken).ConfigureAwait(false);
+    }
+
+    if (resolved.OutputDataModel)
+    {
+        var dataModelJson = DataModelJsonRenderer.Render(snapshot);
+        await File.WriteAllTextAsync(resolved.DataModelPath, dataModelJson, cancellationToken).ConfigureAwait(false);
     }
 
     EndStep(verbosity, stepReports, "Report files written");
@@ -250,6 +258,7 @@ static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
     Directory.CreateDirectory(resolved.OutputDirectory);
     Directory.CreateDirectory(Path.GetDirectoryName(resolved.MarkdownPath) ?? resolved.OutputDirectory);
     Directory.CreateDirectory(Path.GetDirectoryName(resolved.JsonPath) ?? resolved.OutputDirectory);
+    Directory.CreateDirectory(Path.GetDirectoryName(resolved.DataModelPath) ?? resolved.OutputDirectory);
     Directory.CreateDirectory(resolved.FixesDirectory);
 }
 
@@ -293,6 +302,11 @@ static void PrintScanSummary(LogVerbosity verbosity, EffectiveRunOptions resolve
     if (resolved.Format is OutputFormat.Json or OutputFormat.Both)
     {
         Console.WriteLine($"  JSON report     : {resolved.JsonPath}");
+    }
+
+    if (resolved.OutputDataModel)
+    {
+        Console.WriteLine($"  Data model      : {resolved.DataModelPath}");
     }
 
     Console.WriteLine($"  SQL scripts     : {resolved.FixesDirectory}");

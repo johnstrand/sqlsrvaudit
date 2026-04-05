@@ -20,6 +20,7 @@ public sealed class ProjectConfigurationResolverTests
                 profile = "quick",
                 outputFormat = "json",
                 outputDirectory = "./out-from-config",
+                outputDataModel = true,
                 excludeSchemas = new[] { "archive", "ARCHIVE", " " },
                 excludeTables = new[] { "Book_Backup", "dbo.Book_Backup", "Book_Backup", " " },
                 auditOptions = new
@@ -40,6 +41,7 @@ public sealed class ProjectConfigurationResolverTests
                 MarkdownPath = null,
                 JsonPath = null,
                 FixesDirectory = null,
+                OutputDataModel = false,
                 Profile = null,
                 OutputFormat = OutputFormat.Both,
                 AuditOptionOverrides = new AuditOptionsOverrides
@@ -52,9 +54,11 @@ public sealed class ProjectConfigurationResolverTests
 
             Assert.Equal(AuditProfile.Quick, resolved.Profile);
             Assert.Equal(OutputFormat.Both, resolved.Format);
+            Assert.True(resolved.OutputDataModel);
             Assert.Equal(999, resolved.AuditOptions.StaleStatsMinModifications);
             Assert.Equal(91, resolved.AuditOptions.IdentityUsageWarningPercent);
             Assert.Contains("out-from-config", resolved.OutputDirectory, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(Path.Combine("out-from-config", "data-model.json"), resolved.DataModelPath, StringComparison.OrdinalIgnoreCase);
             Assert.NotNull(resolved.ExcludeSchemas);
             Assert.Single(resolved.ExcludeSchemas!);
             Assert.Equal("archive", resolved.ExcludeSchemas![0], ignoreCase: true);
@@ -73,6 +77,34 @@ public sealed class ProjectConfigurationResolverTests
     }
 
     [Fact]
+    public void Resolve_UsesOutputDataModelFromCliFlag()
+    {
+        var cli = new CliOptions
+        {
+            Command = "scan",
+            ConnectionString = "Server=.;Database=Db;Trusted_Connection=True;",
+            ConfigPath = null,
+            SuppressionsPath = null,
+            OutputDirectory = null,
+            MarkdownPath = null,
+            JsonPath = null,
+            FixesDirectory = null,
+            OutputDataModel = true,
+            Profile = null,
+            OutputFormat = null,
+            NonInteractive = false,
+            Preset = null,
+            ActiveCheckIds = null,
+            AuditOptionOverrides = new AuditOptionsOverrides(),
+        };
+
+        var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
+
+        Assert.True(resolved.OutputDataModel);
+        Assert.EndsWith(Path.Combine("audit-output", "data-model.json"), resolved.DataModelPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Resolve_LoadsEmbeddedPresetWhenConfigPathUsesPresetAlias()
     {
         var cli = new CliOptions
@@ -87,6 +119,7 @@ public sealed class ProjectConfigurationResolverTests
             FixesDirectory = null,
             Profile = null,
             OutputFormat = null,
+            OutputDataModel = false,
             NonInteractive = false,
             Preset = null,
             ActiveCheckIds = null,
@@ -117,6 +150,7 @@ public sealed class ProjectConfigurationResolverTests
             FixesDirectory = null,
             Profile = AuditProfile.Quick,
             OutputFormat = OutputFormat.Both,
+            OutputDataModel = false,
             ActiveCheckIds = ["STAT-001"],
             AuditOptionOverrides = new AuditOptionsOverrides(),
         };
@@ -153,6 +187,7 @@ public sealed class ProjectConfigurationResolverTests
                 MarkdownPath = null,
                 JsonPath = null,
                 FixesDirectory = null,
+                OutputDataModel = false,
                 Profile = null,
                 OutputFormat = null,
                 NonInteractive = false,

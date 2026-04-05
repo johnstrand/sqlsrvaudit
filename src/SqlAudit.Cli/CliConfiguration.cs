@@ -49,6 +49,8 @@ internal sealed class CliOptions
 
     public string? FixesDirectory { get; init; }
 
+    public bool OutputDataModel { get; init; }
+
     public string? SuppressionsPath { get; init; }
 
     public AuditProfile? Profile { get; init; }
@@ -125,6 +127,7 @@ internal sealed class CliOptions
             MarkdownPath = parseResult.GetValue(parser.Markdown),
             JsonPath = parseResult.GetValue(parser.Json),
             FixesDirectory = parseResult.GetValue(parser.FixesDir),
+            OutputDataModel = parseResult.GetValue(parser.OutputDataModel),
             SuppressionsPath = parseResult.GetValue(parser.SuppressionsPathOption) ?? parseResult.GetValue(parser.PathAlias),
             Profile = enumOptions.Profile,
             OutputFormat = enumOptions.Format,
@@ -436,6 +439,7 @@ internal sealed class CliOptions
             Markdown = CreateOption<string?>("--markdown", "Markdown report path"),
             Json = CreateOption<string?>("--json", "JSON report path"),
             FixesDir = CreateOption<string?>("--fixes-dir", "Folder for SQL fix scripts"),
+            OutputDataModel = CreateOption<bool>("--output-data-model", "Write full filtered data model JSON"),
             SuppressionsPathOption = CreateOption<string?>("--suppressions", "Suppressions JSON file path"),
             NonInteractive = CreateOption<bool>("--non-interactive", "Create config without prompts"),
             Force = CreateOption<bool>("--force", "Overwrite existing file"),
@@ -484,6 +488,7 @@ internal sealed class CliOptions
         parser.Scan.Add(parser.Markdown);
         parser.Scan.Add(parser.Json);
         parser.Scan.Add(parser.FixesDir);
+        parser.Scan.Add(parser.OutputDataModel);
         parser.Scan.Add(parser.SuppressionsPathOption);
         parser.Scan.Add(parser.FailOn);
         parser.Scan.Add(parser.Verbose);
@@ -615,6 +620,8 @@ internal sealed class CliOptions
 
         public Option<string?> FixesDir { get; set; } = null!;
 
+        public Option<bool> OutputDataModel { get; set; } = null!;
+
         public Option<string?> SuppressionsPathOption { get; set; } = null!;
 
         public Option<bool> NonInteractive { get; set; } = null!;
@@ -720,6 +727,8 @@ internal sealed class ProjectConfigFile
 
     public string? FixesDirectory { get; init; }
 
+    public bool? OutputDataModel { get; init; }
+
     public string? SuppressionsPath { get; init; }
 
     public IReadOnlyList<string>? ExcludeSchemas { get; init; }
@@ -746,6 +755,10 @@ internal sealed class EffectiveRunOptions
     public required string JsonPath { get; init; }
 
     public required string FixesDirectory { get; init; }
+
+    public required bool OutputDataModel { get; init; }
+
+    public required string DataModelPath { get; init; }
 
     public required string? SuppressionsPath { get; init; }
 
@@ -790,6 +803,7 @@ internal static class ProjectConfigurationResolver
 
         var format = cliOptions.OutputFormat ?? config?.OutputFormat ?? OutputFormat.Both;
         var outputDir = Path.GetFullPath(cliOptions.OutputDirectory ?? config?.OutputDirectory ?? "audit-output");
+        var outputDataModel = cliOptions.OutputDataModel || config?.OutputDataModel == true;
         var suppressionsPath = ResolveSuppressionsPath(cliOptions.SuppressionsPath, config?.SuppressionsPath);
 
         return new EffectiveRunOptions
@@ -801,6 +815,8 @@ internal static class ProjectConfigurationResolver
             MarkdownPath = Path.GetFullPath(cliOptions.MarkdownPath ?? config?.MarkdownPath ?? Path.Combine(outputDir, "report.md")),
             JsonPath = Path.GetFullPath(cliOptions.JsonPath ?? config?.JsonPath ?? Path.Combine(outputDir, "report.json")),
             FixesDirectory = Path.GetFullPath(cliOptions.FixesDirectory ?? config?.FixesDirectory ?? Path.Combine(outputDir, "fixes")),
+            OutputDataModel = outputDataModel,
+            DataModelPath = Path.GetFullPath(Path.Combine(outputDir, "data-model.json")),
             SuppressionsPath = suppressionsPath,
             ExcludeSchemas = excludeSchemas,
             ExcludeTables = excludeTables,
