@@ -10,16 +10,34 @@ public sealed class SqlFixScriptRendererTests
     {
         var report = CreateReport(
         [
-            CreateFinding("IDX-001", "Duplicate index", "SELECT 1;"),
-            CreateFinding("IDX-002", "No script", fixScript: null),
+            CreateFinding("IDX-001", "Duplicate index", "SELECT 1;", requiresWindow: false),
+            CreateFinding("IDX-002", "No script", fixScript: null, requiresWindow: false),
         ]);
 
         var rendered = SqlFixScriptRenderer.Render(report);
 
-        Assert.Single(rendered.IndividualScripts);
+        Assert.Single(rendered.NoWindowScripts);
+        Assert.Empty(rendered.RequiresWindowScripts);
         Assert.Contains("-- Finding: IDX-001 - Duplicate index", rendered.CombinedScript, StringComparison.Ordinal);
         Assert.DoesNotContain("IDX-002", rendered.CombinedScript, StringComparison.Ordinal);
         Assert.Contains("GO", rendered.CombinedScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_RoutesScriptsByServiceWindow()
+    {
+        var report = CreateReport(
+        [
+            CreateFinding("IDX-001", "Safe fix", "SELECT 1;", requiresWindow: false),
+            CreateFinding("IDX-002", "Risky fix", "SELECT 2;", requiresWindow: true),
+        ]);
+
+        var rendered = SqlFixScriptRenderer.Render(report);
+
+        Assert.Single(rendered.NoWindowScripts);
+        Assert.Single(rendered.RequiresWindowScripts);
+        Assert.Contains("idx-001", rendered.NoWindowScripts.Keys.First(), StringComparison.Ordinal);
+        Assert.Contains("idx-002", rendered.RequiresWindowScripts.Keys.First(), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -28,11 +46,11 @@ public sealed class SqlFixScriptRendererTests
         var veryLongTitle = new string('A', 180);
         var report = CreateReport(
         [
-            CreateFinding("IDX-001", veryLongTitle, "SELECT 1;"),
+            CreateFinding("IDX-001", veryLongTitle, "SELECT 1;", requiresWindow: false),
         ]);
 
         var rendered = SqlFixScriptRenderer.Render(report);
-        var fileName = Assert.Single(rendered.IndividualScripts).Key;
+        var fileName = Assert.Single(rendered.NoWindowScripts).Key;
 
         Assert.EndsWith(".sql", fileName, StringComparison.Ordinal);
         Assert.True(fileName.Length <= 104);
@@ -53,7 +71,7 @@ public sealed class SqlFixScriptRendererTests
         };
     }
 
-    private static AuditFinding CreateFinding(string id, string title, string? fixScript)
+    private static AuditFinding CreateFinding(string id, string title, string? fixScript, bool requiresWindow = true)
     {
         return new AuditFinding
         {
@@ -65,7 +83,7 @@ public sealed class SqlFixScriptRendererTests
             Description = "desc",
             Impact = "impact",
             Recommendation = "reco",
-            ServiceWindow = ServiceWindowAdvisor.Yes("window"),
+            ServiceWindow = requiresWindow ? ServiceWindowAdvisor.Yes("window") : ServiceWindowAdvisor.No("safe"),
             FixScript = fixScript,
         };
     }

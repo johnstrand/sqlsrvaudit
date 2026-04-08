@@ -245,7 +245,8 @@ internal static class ScanOutput
             AnsiConsole.MarkupLine($"  [grey]Data model      :[/] [cyan]{Markup.Escape(resolved.DataModelPath)}[/]");
         }
 
-        AnsiConsole.MarkupLine($"  [grey]SQL scripts     :[/] [cyan]{Markup.Escape(resolved.FixesDirectory)}[/]");
+        AnsiConsole.MarkupLine($"  [grey]SQL scripts     :[/] [cyan]{Markup.Escape(Path.Combine(resolved.FixesDirectory, "no-window"))}[/] [grey](no window)[/]");
+        AnsiConsole.MarkupLine($"                     [cyan]{Markup.Escape(Path.Combine(resolved.FixesDirectory, "requires-window"))}[/] [grey](requires window)[/]");
 
         AnsiConsole.Write(new Rule().RuleStyle("grey"));
     }

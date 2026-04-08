@@ -223,13 +223,24 @@ static async Task WriteOutputsAsync(
     var combinedPath = Path.Combine(resolved.FixesDirectory, "all-fixes.sql");
     await File.WriteAllTextAsync(combinedPath, scripts.CombinedScript, cancellationToken).ConfigureAwait(false);
 
-    foreach (var script in scripts.IndividualScripts)
+    var noWindowDir = Path.Combine(resolved.FixesDirectory, "no-window");
+    var requiresWindowDir = Path.Combine(resolved.FixesDirectory, "requires-window");
+    Directory.CreateDirectory(noWindowDir);
+    Directory.CreateDirectory(requiresWindowDir);
+
+    foreach (var script in scripts.NoWindowScripts)
     {
-        await File.WriteAllTextAsync(Path.Combine(resolved.FixesDirectory, script.Key), script.Value, cancellationToken)
+        await File.WriteAllTextAsync(Path.Combine(noWindowDir, script.Key), script.Value, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    ScanOutput.EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.IndividualScripts.Count} individual scripts)");
+    foreach (var script in scripts.RequiresWindowScripts)
+    {
+        await File.WriteAllTextAsync(Path.Combine(requiresWindowDir, script.Key), script.Value, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    ScanOutput.EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.NoWindowScripts.Count} no-window, {scripts.RequiresWindowScripts.Count} requires-window)");
 }
 
 static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
@@ -243,7 +254,7 @@ static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
 
 static void CleanFixesDirectory(string fixesDirectory)
 {
-    foreach (var file in Directory.EnumerateFiles(fixesDirectory, "*.sql"))
+    foreach (var file in Directory.EnumerateFiles(fixesDirectory, "*.sql", SearchOption.AllDirectories))
     {
         File.Delete(file);
     }

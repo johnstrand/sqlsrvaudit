@@ -7,7 +7,8 @@ public static class SqlFixScriptRenderer
 {
     public static RenderedFixScripts Render(AuditReport report)
     {
-        var individual = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var noWindow = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var requiresWindow = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var combined = new StringBuilder();
 
         combined.AppendLine("-- SQL Audit remediation script bundle");
@@ -21,7 +22,10 @@ public static class SqlFixScriptRenderer
             var fileName = $"{slug}.sql";
             var script = finding.FixScript!.Trim();
 
-            individual[fileName] = script + Environment.NewLine;
+            if (finding.ServiceWindow.RequiresServiceWindow)
+                requiresWindow[fileName] = script + Environment.NewLine;
+            else
+                noWindow[fileName] = script + Environment.NewLine;
 
             combined.AppendLine($"-- Finding: {finding.Id} - {finding.Title}");
             combined.AppendLine($"-- RequiresServiceWindow: {finding.ServiceWindow.RequiresServiceWindow}");
@@ -31,7 +35,7 @@ public static class SqlFixScriptRenderer
             combined.AppendLine();
         }
 
-        return new RenderedFixScripts(combined.ToString(), individual);
+        return new RenderedFixScripts(combined.ToString(), noWindow, requiresWindow);
     }
 
     private static string BuildSlug(string id, string title)
@@ -49,4 +53,7 @@ public static class SqlFixScriptRenderer
     }
 }
 
-public sealed record RenderedFixScripts(string CombinedScript, IReadOnlyDictionary<string, string> IndividualScripts);
+public sealed record RenderedFixScripts(
+    string CombinedScript,
+    IReadOnlyDictionary<string, string> NoWindowScripts,
+    IReadOnlyDictionary<string, string> RequiresWindowScripts);
