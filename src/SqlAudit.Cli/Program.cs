@@ -242,6 +242,7 @@ static async Task WriteOutputsAsync(
     EndStep(verbosity, stepReports, "Report files written");
 
     var stepScripts = StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
+    CleanFixesDirectory(resolved.FixesDirectory);
     var scripts = SqlFixScriptRenderer.Render(report);
     var combinedPath = Path.Combine(resolved.FixesDirectory, "all-fixes.sql");
     await File.WriteAllTextAsync(combinedPath, scripts.CombinedScript, cancellationToken).ConfigureAwait(false);
@@ -262,6 +263,14 @@ static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
     Directory.CreateDirectory(Path.GetDirectoryName(resolved.JsonPath) ?? resolved.OutputDirectory);
     Directory.CreateDirectory(Path.GetDirectoryName(resolved.DataModelPath) ?? resolved.OutputDirectory);
     Directory.CreateDirectory(resolved.FixesDirectory);
+}
+
+static void CleanFixesDirectory(string fixesDirectory)
+{
+    foreach (var file in Directory.EnumerateFiles(fixesDirectory, "*.sql"))
+    {
+        File.Delete(file);
+    }
 }
 
 static void PrintScanSummary(LogVerbosity verbosity, EffectiveRunOptions resolved, AuditReport report, TimeSpan duration)
