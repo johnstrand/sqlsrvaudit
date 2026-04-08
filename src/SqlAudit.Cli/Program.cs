@@ -97,18 +97,20 @@ static async Task<int> RunScanCommandAsync(CliOptions options)
     var runTimer = Stopwatch.StartNew();
     var checks = SqlServerHealthChecks.Create(resolved.Profile, resolved.ActiveCheckIds);
 
-    PrintBanner(verbosity);
-    PrintRunConfiguration(verbosity, resolved, checks.Count);
+    ScanOutput.PrintBanner(verbosity);
+    ScanOutput.PrintRunConfiguration(verbosity, resolved, checks.Count);
 
     using var cts = CreateCancellationTokenSource();
     await RunPreflightAsync(verbosity, resolved.ConnectionString, cts.Token).ConfigureAwait(false);
 
     var auditRun = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
+    ScanOutput.PrintCollectionWarnings(verbosity, auditRun.Snapshot.CollectionWarnings);
     var reportWithForecasts = AttachGrowthForecasts(auditRun.Report, resolved.DataModelPath, auditRun.Snapshot);
     var report = ApplySuppressions(verbosity, reportWithForecasts, resolved.SuppressionsPath);
 
     await WriteOutputsAsync(verbosity, resolved, report, auditRun.Snapshot, cts.Token).ConfigureAwait(false);
-    PrintScanSummary(verbosity, resolved, report, runTimer.Elapsed);
+    ScanOutput.PrintScanSummary(verbosity, resolved, report, runTimer.Elapsed);
+    ScanOutput.PrintCheckExecutions(report.CheckExecutions, verbosity);
 
     if (IsFailThresholdBreached(report, resolved.FailOnSeverity, out var threshold, out var matchingCount))
     {
@@ -124,9 +126,9 @@ static async Task<ResolveRunOptionsResult> ResolveRunOptionsAsync(CliOptions opt
 {
     try
     {
-        var stepResolve = StartStep(LogVerbosity.Normal, 1, 6, "Resolve configuration");
+        var stepResolve = ScanOutput.StartStep(LogVerbosity.Normal, 1, 6, "Resolve configuration");
         var resolved = ProjectConfigurationResolver.Resolve(options, Environment.GetEnvironmentVariable("SQLAUDIT_CONNECTION"));
-        EndStep(LogVerbosity.Normal, stepResolve, "Configuration resolved");
+        ScanOutput.EndStep(LogVerbosity.Normal, stepResolve, "Configuration resolved");
         return ResolveRunOptionsResult.Ok(resolved);
     }
     catch (Exception ex)
@@ -134,24 +136,6 @@ static async Task<ResolveRunOptionsResult> ResolveRunOptionsAsync(CliOptions opt
         await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
         return ResolveRunOptionsResult.Fail(2);
     }
-}
-
-static void PrintRunConfiguration(LogVerbosity verbosity, EffectiveRunOptions resolved, int activeChecks)
-{
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Profile      : {resolved.Profile.ToString().ToLowerInvariant()}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Output format: {resolved.Format.ToString().ToLowerInvariant()}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Data model   : {(resolved.OutputDataModel ? "enabled" : "disabled")}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Active checks: {activeChecks}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Output dir   : {resolved.OutputDirectory}");
-    PrintLine(verbosity, LogVerbosity.Normal, $"  Suppressions : {resolved.SuppressionsPath ?? "(none)"}");
-    PrintLine(
-        verbosity,
-        LogVerbosity.Normal,
-        $"  Excluded schemas: {(resolved.ExcludeSchemas is null ? "(none)" : string.Join(", ", resolved.ExcludeSchemas))}");
-    PrintLine(
-        verbosity,
-        LogVerbosity.Normal,
-        $"  Excluded tables : {(resolved.ExcludeTables is null ? "(none)" : string.Join(", ", resolved.ExcludeTables))}");
 }
 
 static CancellationTokenSource CreateCancellationTokenSource()
@@ -168,9 +152,9 @@ static CancellationTokenSource CreateCancellationTokenSource()
 
 static async Task RunPreflightAsync(LogVerbosity verbosity, string connectionString, CancellationToken cancellationToken)
 {
-    var stepPreflight = StartStep(verbosity, 2, 6, "Run connection preflight checks");
+    var stepPreflight = ScanOutput.StartStep(verbosity, 2, 6, "Run connection preflight checks");
     var preflight = await SqlServerPreflight.RunAsync(connectionString, cancellationToken).ConfigureAwait(false);
-    EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
+    ScanOutput.EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
 }
 
 static async Task<SqlServerAuditRunResult> RunAuditAsync(
@@ -179,31 +163,23 @@ static async Task<SqlServerAuditRunResult> RunAuditAsync(
     IReadOnlyCollection<SqlAudit.Core.Abstractions.IHealthCheck> checks,
     CancellationToken cancellationToken)
 {
-    var stepAudit = StartStep(verbosity, 3, 6, "Run SQL Server analysis");
-    PrintLine(verbosity, LogVerbosity.Normal, "      Collecting metadata and evaluating checks...");
-
+    var stepAudit = ScanOutput.StartStep(verbosity, 3, 6, "Run SQL Server analysis");
     var auditor = new SqlServerAuditor(checks);
-    var run = await auditor.RunWithSnapshotAsync(
-            resolved.ConnectionString,
-            resolved.AuditOptions,
-            resolved.Profile,
-            resolved.ExcludeSchemas,
-            resolved.ExcludeTables,
-            cancellationToken)
+    var run = await ScanOutput.RunAuditWithProgressAsync(
+            verbosity, auditor, resolved, checks.Count, cancellationToken)
         .ConfigureAwait(false);
-
-    EndStep(verbosity, stepAudit, $"Analysis complete ({run.Report.Findings.Count} findings)");
+    ScanOutput.EndStep(verbosity, stepAudit, $"Analysis complete — {run.Report.Findings.Count} findings");
     return run;
 }
 
 static AuditReport ApplySuppressions(LogVerbosity verbosity, AuditReport report, string? suppressionsPath)
 {
-    var stepSuppressions = StartStep(verbosity, 4, 6, "Apply suppressions");
+    var stepSuppressions = ScanOutput.StartStep(verbosity, 4, 6, "Apply suppressions");
     var suppressionRules = SuppressionFileLoader.Load(suppressionsPath);
     var suppressionOutcome = AuditFindingSuppressor.Apply(report.Findings, suppressionRules, DateTimeOffset.UtcNow);
     var updatedReport = ApplySuppressionResult(report, suppressionOutcome);
 
-    EndStep(
+    ScanOutput.EndStep(
         verbosity,
         stepSuppressions,
         $"Suppressed {suppressionOutcome.Summary.SuppressedFindings} findings using {suppressionOutcome.Summary.ActiveRules} active rules");
@@ -218,7 +194,7 @@ static async Task WriteOutputsAsync(
     DatabaseSnapshot snapshot,
     CancellationToken cancellationToken)
 {
-    var stepReports = StartStep(verbosity, 5, 6, "Render report files");
+    var stepReports = ScanOutput.StartStep(verbosity, 5, 6, "Render report files");
     EnsureOutputDirectoriesExist(resolved);
 
     if (resolved.Format is OutputFormat.Markdown or OutputFormat.Both)
@@ -239,9 +215,9 @@ static async Task WriteOutputsAsync(
         await File.WriteAllTextAsync(resolved.DataModelPath, dataModelJson, cancellationToken).ConfigureAwait(false);
     }
 
-    EndStep(verbosity, stepReports, "Report files written");
+    ScanOutput.EndStep(verbosity, stepReports, "Report files written");
 
-    var stepScripts = StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
+    var stepScripts = ScanOutput.StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
     CleanFixesDirectory(resolved.FixesDirectory);
     var scripts = SqlFixScriptRenderer.Render(report);
     var combinedPath = Path.Combine(resolved.FixesDirectory, "all-fixes.sql");
@@ -253,7 +229,7 @@ static async Task WriteOutputsAsync(
             .ConfigureAwait(false);
     }
 
-    EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.IndividualScripts.Count} individual scripts)");
+    ScanOutput.EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.IndividualScripts.Count} individual scripts)");
 }
 
 static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
@@ -271,56 +247,6 @@ static void CleanFixesDirectory(string fixesDirectory)
     {
         File.Delete(file);
     }
-}
-
-static void PrintScanSummary(LogVerbosity verbosity, EffectiveRunOptions resolved, AuditReport report, TimeSpan duration)
-{
-    var requiringWindow = report.Findings.Count(f => f.ServiceWindow.RequiresServiceWindow);
-    var noWindow = report.Findings.Count - requiringWindow;
-
-    PrintSeparator(verbosity);
-    WriteLabel("Scan completed", ConsoleColor.Green);
-    Console.WriteLine();
-    Console.WriteLine($"  Total findings      : {report.Findings.Count}");
-    Console.WriteLine($"  Service window yes  : {requiringWindow}");
-    Console.WriteLine($"  Service window no   : {noWindow}");
-
-    foreach (var severity in report.SeverityCounts.OrderBy(kvp => kvp.Key))
-    {
-        Console.WriteLine($"  Severity {severity.Key,-9}: {severity.Value}");
-    }
-
-    foreach (var category in report.CategoryCounts.OrderByDescending(kvp => kvp.Value).ThenBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
-    {
-        Console.WriteLine($"  Category {category.Key,-9}: {category.Value}");
-    }
-
-    Console.WriteLine($"  Suppressed findings : {report.SuppressionSummary.SuppressedFindings}");
-    Console.WriteLine($"  Suppression rules   : {report.SuppressionSummary.ActiveRules} active, {report.SuppressionSummary.ExpiredRules} expired");
-    Console.WriteLine($"  Duration            : {duration:hh\\:mm\\:ss}");
-    PrintSeparator(verbosity);
-
-    if (verbosity == LogVerbosity.Verbose)
-    {
-        PrintCheckExecutions(report.CheckExecutions, verbosity);
-    }
-
-    if (resolved.Format is OutputFormat.Markdown or OutputFormat.Both)
-    {
-        Console.WriteLine($"  Markdown report : {resolved.MarkdownPath}");
-    }
-
-    if (resolved.Format is OutputFormat.Json or OutputFormat.Both)
-    {
-        Console.WriteLine($"  JSON report     : {resolved.JsonPath}");
-    }
-
-    if (resolved.OutputDataModel)
-    {
-        Console.WriteLine($"  Data model      : {resolved.DataModelPath}");
-    }
-
-    Console.WriteLine($"  SQL scripts     : {resolved.FixesDirectory}");
 }
 
 static bool IsFailThresholdBreached(AuditReport report, AuditSeverity? threshold, out AuditSeverity actualThreshold, out int matchingCount)
@@ -478,90 +404,6 @@ static IReadOnlyList<TableGrowthForecastInfo> BuildGrowthForecasts(DatabaseSnaps
         .ToArray();
 
     return forecasts;
-}
-
-static void PrintCheckExecutions(IReadOnlyList<CheckExecutionResult> executions, LogVerbosity verbosity)
-{
-    if (executions.Count == 0)
-    {
-        return;
-    }
-
-    PrintSeparator(verbosity);
-    WriteLabel("Check timings", ConsoleColor.Cyan);
-    Console.WriteLine();
-    Console.WriteLine("  Status   Duration   Findings  CheckId     Title");
-    Console.WriteLine("  -------  ---------  --------  ----------  -----------------------------");
-
-    foreach (var execution in executions.OrderByDescending(e => e.DurationMs).ThenBy(e => e.CheckId, StringComparer.OrdinalIgnoreCase))
-    {
-        var statusText = execution.Status switch
-        {
-            CheckExecutionStatus.Success => "success",
-            CheckExecutionStatus.Failed => "failed",
-            _ => "skipped",
-        };
-
-        Console.WriteLine($"  {statusText,-7}  {execution.DurationMs,7}ms  {execution.FindingCount,8}  {execution.CheckId,-10}  {execution.Title}");
-    }
-}
-
-static Stopwatch StartStep(LogVerbosity verbosity, int current, int total, string title)
-{
-    if (verbosity != LogVerbosity.Quiet)
-    {
-        WriteLabel($"[{current}/{total}]", ConsoleColor.Cyan);
-        Console.WriteLine($" {title}");
-    }
-
-    return Stopwatch.StartNew();
-}
-
-static void EndStep(LogVerbosity verbosity, Stopwatch stopwatch, string message)
-{
-    stopwatch.Stop();
-    if (verbosity != LogVerbosity.Quiet)
-    {
-        WriteLabel("  [OK]", ConsoleColor.Green);
-        Console.WriteLine($" {message} ({stopwatch.Elapsed:hh\\:mm\\:ss})");
-    }
-}
-
-static void PrintBanner(LogVerbosity verbosity)
-{
-    if (verbosity == LogVerbosity.Quiet)
-    {
-        return;
-    }
-
-    PrintSeparator(verbosity);
-    WriteLabel("SqlAudit", ConsoleColor.Cyan);
-    Console.WriteLine(" - SQL Server Health Audit");
-    PrintSeparator(verbosity);
-}
-
-static void PrintSeparator(LogVerbosity verbosity)
-{
-    if (verbosity != LogVerbosity.Quiet)
-    {
-        Console.WriteLine("------------------------------------------------------------");
-    }
-}
-
-static void PrintLine(LogVerbosity current, LogVerbosity minimum, string text)
-{
-    if (current >= minimum)
-    {
-        Console.WriteLine(text);
-    }
-}
-
-static void WriteLabel(string text, ConsoleColor color)
-{
-    var previous = Console.ForegroundColor;
-    Console.ForegroundColor = color;
-    Console.Write(text);
-    Console.ForegroundColor = previous;
 }
 
 static int HandleUnhandledException(Exception ex)

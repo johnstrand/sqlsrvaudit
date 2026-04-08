@@ -8,7 +8,10 @@ public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
 {
     private readonly IReadOnlyCollection<IHealthCheck> checks = [.. checks];
 
-    public async Task<HealthCheckRunResult> RunAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    public async Task<HealthCheckRunResult> RunAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken,
+        IProgress<string>? checkProgress = null)
     {
         var findings = new List<AuditFinding>();
         var executions = new List<CheckExecutionResult>();
@@ -16,6 +19,7 @@ public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
         foreach (var check in checks)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            checkProgress?.Report(check.Id);
             var timer = Stopwatch.StartNew();
 
             try

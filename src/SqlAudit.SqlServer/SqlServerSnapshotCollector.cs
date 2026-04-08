@@ -11,17 +11,28 @@ public sealed class SqlServerSnapshotCollector
         AuditProfile profile,
         IReadOnlyCollection<string>? excludedSchemas,
         IReadOnlyCollection<string>? excludedTables,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IProgress<CollectionProgress>? progress = null)
     {
+        var totalSteps = profile == AuditProfile.Deep ? 21 : 18;
+        var completed = 0;
+
+        void Report(string stepName)
+            => progress?.Report(new CollectionProgress(stepName, ++completed, totalSteps));
+
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
         var warnings = new List<CollectionWarning>();
+
+        Report("Server information");
         var serverInfo = await ReadServerInfoAsync(connection, cancellationToken).ConfigureAwait(false);
         var includePhysical = profile == AuditProfile.Deep;
         var includeStatistics = profile == AuditProfile.Deep;
 
+        Report("Tables");
         var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Indexes");
         var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var hasStatePermission = await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -34,23 +45,36 @@ public sealed class SqlServerSnapshotCollector
                 "deadlock summary, missing index signals, log health, and tempdb pressure data were not collected."));
         }
 
+        Report("Resource-intensive queries");
         var topResourceIntensiveQueries = await ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Wait statistics");
         var topWaitStats = await ReadTopWaitStatsAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Query Store regressions");
         var queryStoreRegressions = await ReadQueryStoreRegressionsAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Active blocking sessions");
         var activeBlockingSessions = await ReadActiveBlockingSessionsAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Deadlock summary");
         var deadlockSummary = await ReadDeadlockSummaryAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Missing index signals");
         var missingIndexSignals = await ReadMissingIndexSignalsAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Log health");
         var logHealth = await ReadLogHealthAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("TempDB pressure");
         var tempDbPressure = await ReadTempDbPressureAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("File growth settings");
         var fileGrowthHealth = await ReadFileGrowthHealthAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Backup posture");
         var backupPosture = await ReadBackupPostureAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Security hygiene");
         var securityHygieneIssues = await ReadSecurityHygieneIssuesAsync(connection, cancellationToken).ConfigureAwait(false);
 
+        Report("Index usage statistics");
         var indexUsage = await TryReadOptionalListAsync(
             () => ReadIndexUsageAsync(connection, cancellationToken),
             warnings,
             "Index Usage Statistics").ConfigureAwait(false);
 
+        Report("Index physical stats");
         var indexPhysicalStats = includePhysical
             ? await TryReadOptionalListAsync(
                 () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
@@ -58,6 +82,7 @@ public sealed class SqlServerSnapshotCollector
                 "Index Physical Statistics").ConfigureAwait(false)
             : (IReadOnlyList<IndexPhysicalInfo>)[];
 
+        Report("Table statistics");
         var statistics = includeStatistics
             ? await TryReadOptionalListAsync(
                 () => ReadStatisticsAsync(connection, cancellationToken),
@@ -65,17 +90,24 @@ public sealed class SqlServerSnapshotCollector
                 "Table Statistics").ConfigureAwait(false)
             : (IReadOnlyList<StatisticsInfo>)[];
 
+        Report("Column metadata");
         var columns = await TryReadOptionalListAsync(
             () => ReadColumnsAsync(connection, cancellationToken),
             warnings,
             "Column Metadata").ConfigureAwait(false);
 
+        Report("Column null statistics");
         var columnNullStats = profile == AuditProfile.Deep
             ? await TryReadOptionalListAsync(
                 () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
                 warnings,
                 "Column Null Statistics").ConfigureAwait(false)
             : (IReadOnlyList<ColumnNullStats>)[];
+
+        Report("Foreign keys");
+        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+        Report("Identity columns");
+        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var snapshot = new DatabaseSnapshot
         {
@@ -92,9 +124,9 @@ public sealed class SqlServerSnapshotCollector
             Indexes = indexes,
             IndexUsage = indexUsage,
             IndexPhysicalStats = indexPhysicalStats,
-            ForeignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false),
+            ForeignKeys = foreignKeys,
             Statistics = statistics,
-            IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false),
+            IdentityColumns = identityColumns,
             TopResourceIntensiveQueries = topResourceIntensiveQueries,
             TopWaitStats = topWaitStats,
             QueryStoreRegressions = queryStoreRegressions,

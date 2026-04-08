@@ -271,3 +271,5 @@ public sealed record ColumnNullStats(
     string SchemaName,
     string TableName,
     string ColumnName);
+
+public sealed record CollectionProgress(string StepName, int Completed, int Total);
