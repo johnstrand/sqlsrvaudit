@@ -46,6 +46,8 @@ public sealed class AuditReport
 
     public IReadOnlyList<TableGrowthForecastInfo> TableGrowthForecasts { get; init; } = [];
 
+    public IReadOnlyList<CollectionWarning> CollectionWarnings { get; init; } = [];
+
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 
     public IReadOnlyDictionary<AuditSeverity, int> SeverityCounts => Findings

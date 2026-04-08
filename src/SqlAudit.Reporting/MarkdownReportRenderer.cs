@@ -11,6 +11,7 @@ public static class MarkdownReportRenderer
 
         WriteHeader(sb, report);
         WriteExclusions(sb, report);
+        WriteCollectionWarnings(sb, report);
         WriteScorecard(sb, report);
         WriteCategories(sb, report);
         WriteSuppressions(sb, report);
@@ -69,6 +70,28 @@ public static class MarkdownReportRenderer
         sb.AppendLine();
         sb.AppendLine($"- Schemas: {FormatExclusionList(report.ExcludedSchemas)}");
         sb.AppendLine($"- Tables: {FormatExclusionList(report.ExcludedTables)}");
+        sb.AppendLine();
+    }
+
+    private static void WriteCollectionWarnings(StringBuilder sb, AuditReport report)
+    {
+        if (report.CollectionWarnings.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine("### ⚠ Data Collection Warnings");
+        sb.AppendLine();
+        sb.AppendLine("Some data could not be collected during this scan. Affected sections may be empty or incomplete.");
+        sb.AppendLine();
+        sb.AppendLine("| Section | Reason |");
+        sb.AppendLine("|---|---|");
+
+        foreach (var warning in report.CollectionWarnings)
+        {
+            sb.AppendLine($"| {EscapeInline(warning.Section)} | {EscapeInline(warning.Reason)} |");
+        }
+
         sb.AppendLine();
     }
 

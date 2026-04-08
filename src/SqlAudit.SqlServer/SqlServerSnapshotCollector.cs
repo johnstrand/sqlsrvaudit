@@ -16,12 +16,23 @@ public sealed class SqlServerSnapshotCollector
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+        var warnings = new List<CollectionWarning>();
         var serverInfo = await ReadServerInfoAsync(connection, cancellationToken).ConfigureAwait(false);
         var includePhysical = profile == AuditProfile.Deep;
         var includeStatistics = profile == AuditProfile.Deep;
 
         var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
         var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        var hasStatePermission = await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false);
+        if (!hasStatePermission)
+        {
+            warnings.Add(new CollectionWarning(
+                "Dynamic Management Views",
+                "The account lacks VIEW SERVER STATE or VIEW DATABASE STATE permission. " +
+                "Resource-intensive queries, wait statistics, query store regressions, active blocking sessions, " +
+                "deadlock summary, missing index signals, log health, and tempdb pressure data were not collected."));
+        }
 
         var topResourceIntensiveQueries = await ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken).ConfigureAwait(false);
         var topWaitStats = await ReadTopWaitStatsAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -34,6 +45,25 @@ public sealed class SqlServerSnapshotCollector
         var fileGrowthHealth = await ReadFileGrowthHealthAsync(connection, cancellationToken).ConfigureAwait(false);
         var backupPosture = await ReadBackupPostureAsync(connection, cancellationToken).ConfigureAwait(false);
         var securityHygieneIssues = await ReadSecurityHygieneIssuesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        var indexUsage = await TryReadOptionalListAsync(
+            () => ReadIndexUsageAsync(connection, cancellationToken),
+            warnings,
+            "Index Usage Statistics").ConfigureAwait(false);
+
+        var indexPhysicalStats = includePhysical
+            ? await TryReadOptionalListAsync(
+                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
+                warnings,
+                "Index Physical Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<IndexPhysicalInfo>)[];
+
+        var statistics = includeStatistics
+            ? await TryReadOptionalListAsync(
+                () => ReadStatisticsAsync(connection, cancellationToken),
+                warnings,
+                "Table Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<StatisticsInfo>)[];
 
         var snapshot = new DatabaseSnapshot
         {
@@ -48,14 +78,10 @@ public sealed class SqlServerSnapshotCollector
             AutoUpdateStatisticsOn = serverInfo.AutoUpdateStatisticsOn,
             Tables = tables,
             Indexes = indexes,
-            IndexUsage = await ReadIndexUsageAsync(connection, cancellationToken).ConfigureAwait(false),
-            IndexPhysicalStats = includePhysical
-                ? await ReadIndexPhysicalStatsAsync(connection, cancellationToken).ConfigureAwait(false)
-                : [],
+            IndexUsage = indexUsage,
+            IndexPhysicalStats = indexPhysicalStats,
             ForeignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false),
-            Statistics = includeStatistics
-                ? await ReadStatisticsAsync(connection, cancellationToken).ConfigureAwait(false)
-                : [],
+            Statistics = statistics,
             IdentityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false),
             TopResourceIntensiveQueries = topResourceIntensiveQueries,
             TopWaitStats = topWaitStats,
@@ -68,6 +94,7 @@ public sealed class SqlServerSnapshotCollector
             FileGrowthHealth = fileGrowthHealth,
             BackupPosture = backupPosture,
             SecurityHygieneIssues = securityHygieneIssues,
+            CollectionWarnings = warnings,
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
@@ -150,6 +177,7 @@ public sealed class SqlServerSnapshotCollector
             FileGrowthHealth = snapshot.FileGrowthHealth,
             BackupPosture = snapshot.BackupPosture,
             SecurityHygieneIssues = snapshot.SecurityHygieneIssues,
+            CollectionWarnings = snapshot.CollectionWarnings,
         };
     }
 
@@ -1400,6 +1428,22 @@ public sealed class SqlServerSnapshotCollector
         }
         catch (SqlException)
         {
+            return [];
+        }
+    }
+
+    private static async Task<IReadOnlyList<T>> TryReadOptionalListAsync<T>(
+        Func<Task<IReadOnlyList<T>>> read,
+        ICollection<CollectionWarning> warnings,
+        string section)
+    {
+        try
+        {
+            return await read().ConfigureAwait(false);
+        }
+        catch (SqlException ex)
+        {
+            warnings.Add(new CollectionWarning(section, ex.Message));
             return [];
         }
     }

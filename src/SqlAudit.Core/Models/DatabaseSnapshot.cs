@@ -55,6 +55,8 @@ public sealed class DatabaseSnapshot
     public BackupPostureInfo? BackupPosture { get; init; }
 
     public IReadOnlyList<SecurityHygieneIssueInfo> SecurityHygieneIssues { get; init; } = [];
+
+    public IReadOnlyList<CollectionWarning> CollectionWarnings { get; init; } = [];
 }
 
 public sealed record TableInfo(
@@ -247,3 +249,5 @@ public sealed record TableGrowthForecastInfo(
     decimal ElapsedDays,
     decimal Projected30DayReservedMb,
     decimal Projected90DayReservedMb);
+
+public sealed record CollectionWarning(string Section, string Reason);

@@ -182,4 +182,52 @@ public sealed class MarkdownReportRendererTests
         Assert.Contains("### Security Hygiene", markdown, StringComparison.Ordinal);
         Assert.Contains("### Growth Forecasting", markdown, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Render_IncludesCollectionWarningsWhenPresent()
+    {
+        var report = new AuditReport
+        {
+            ServerName = "server01",
+            DatabaseName = "DbA",
+            Edition = "Developer Edition",
+            ProductVersion = "16.0",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            CollectionWarnings =
+            [
+                new CollectionWarning(
+                    "Dynamic Management Views",
+                    "The account lacks VIEW SERVER STATE or VIEW DATABASE STATE permission."),
+                new CollectionWarning(
+                    "Index Usage Statistics",
+                    "The user does not have permission to perform this action."),
+            ],
+            Findings = [],
+        };
+
+        var markdown = MarkdownReportRenderer.Render(report);
+
+        Assert.Contains("### ⚠ Data Collection Warnings", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Dynamic Management Views |", markdown, StringComparison.Ordinal);
+        Assert.Contains("| Index Usage Statistics |", markdown, StringComparison.Ordinal);
+        Assert.Contains("The account lacks VIEW SERVER STATE", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Render_OmitsCollectionWarningsSectionWhenNonePresent()
+    {
+        var report = new AuditReport
+        {
+            ServerName = "server01",
+            DatabaseName = "DbA",
+            Edition = "Developer Edition",
+            ProductVersion = "16.0",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            Findings = [],
+        };
+
+        var markdown = MarkdownReportRenderer.Render(report);
+
+        Assert.DoesNotContain("### ⚠ Data Collection Warnings", markdown, StringComparison.Ordinal);
+    }
 }

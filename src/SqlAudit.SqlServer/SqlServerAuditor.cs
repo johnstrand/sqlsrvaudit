@@ -73,6 +73,7 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
             FileGrowthHealth = snapshot.FileGrowthHealth,
             BackupPosture = snapshot.BackupPosture,
             SecurityHygieneIssues = snapshot.SecurityHygieneIssues,
+            CollectionWarnings = snapshot.CollectionWarnings,
             Findings = [.. runResult.Findings
                 .OrderBy(f => f.Severity)
                 .ThenBy(f => f.Category, StringComparer.Ordinal)
