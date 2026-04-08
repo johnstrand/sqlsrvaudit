@@ -160,3 +160,166 @@ internal sealed class CpuPressureCheck : IHealthCheck
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>([finding]);
     }
 }
+
+internal sealed class SleepingOpenTransactionCheck : IHealthCheck
+{
+    public string Id => "SESS-001";
+
+    public string Title => "Sleeping sessions with open transactions";
+
+    public string Category => "Sessions";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        var findings = new List<AuditFinding>();
+
+        foreach (var session in context.Snapshot.SleepingTransactions)
+        {
+            AuditSeverity? severity = session.ElapsedMinutes switch
+            {
+                > 30 => AuditSeverity.High,
+                > 5 => AuditSeverity.Medium,
+                _ => null,
+            };
+
+            if (severity is null)
+            {
+                continue;
+            }
+
+            findings.Add(new AuditFinding
+            {
+                Id = $"SESS-001-{session.SessionId}",
+                Title = "Sleeping session has an open transaction",
+                Category = Category,
+                Severity = severity.Value,
+                DatabaseObject = $"session:{session.SessionId}",
+                Description = $"Session {session.SessionId} (login: {session.LoginName}, database: {session.DatabaseName}) has been sleeping for {session.ElapsedMinutes:F1} minutes with {session.OpenTransactionCount} open transaction(s). The last executed statement was: {session.LastQueryText}",
+                Impact = "Open transactions in sleeping sessions hold locks, prevent log truncation, and can cause unexpected blocking chains as other sessions wait for resources held by the idle transaction.",
+                Recommendation = "Investigate the application that owns this session. If safe, kill the session. Review connection pooling and application transaction handling.",
+                ServiceWindow = ServiceWindowAdvisor.No("KILL is an immediate operation, but verify impact before executing."),
+                FixScript = $"-- TODO: Verify this session can be safely killed before executing.\nKILL {session.SessionId};",
+                Evidence =
+                [
+                    new FindingEvidence("SessionId", session.SessionId.ToString(CultureInfo.InvariantCulture)),
+                    new FindingEvidence("LoginName", session.LoginName),
+                    new FindingEvidence("Database", session.DatabaseName),
+                    new FindingEvidence("ElapsedMinutes", session.ElapsedMinutes.ToString("F1", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("OpenTransactions", session.OpenTransactionCount.ToString(CultureInfo.InvariantCulture)),
+                ],
+            });
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}
+
+internal sealed class PageLifeExpectancyCheck : IHealthCheck
+{
+    public string Id => "MEM-001";
+
+    public string Title => "Memory pressure indicators";
+
+    public string Category => "Memory";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        var mem = context.Snapshot.MemoryPressure;
+        if (mem is null)
+        {
+            return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
+        }
+
+        var findings = new List<AuditFinding>();
+
+        AuditSeverity? pleSeverity = mem.PageLifeExpectancySeconds switch
+        {
+            < 150 => AuditSeverity.High,
+            < 300 => AuditSeverity.Medium,
+            _ => null,
+        };
+
+        var memoryShortfall = mem.TargetServerMemoryMb > 0
+            && mem.TotalServerMemoryMb / mem.TargetServerMemoryMb < 0.90m;
+
+        if (pleSeverity is not null || memoryShortfall)
+        {
+            var severity = pleSeverity ?? AuditSeverity.Medium;
+            findings.Add(new AuditFinding
+            {
+                Id = "MEM-001-PLE",
+                Title = "Memory pressure detected",
+                Category = Category,
+                Severity = severity,
+                DatabaseObject = "server",
+                Description = $"Page Life Expectancy (PLE) is {mem.PageLifeExpectancySeconds:N0}s (target: ≥300s). Buffer cache hit ratio: {mem.BufferCacheHitRatioPercent:F1}%. Total server memory: {mem.TotalServerMemoryMb:F0} MB of target {mem.TargetServerMemoryMb:F0} MB ({(mem.TargetServerMemoryMb > 0 ? mem.TotalServerMemoryMb / mem.TargetServerMemoryMb * 100 : 0):F0}%).",
+                Impact = "Low PLE means pages are being evicted from the buffer pool quickly, causing more physical I/O reads and higher PAGEIOLATCH waits.",
+                Recommendation = "Review the buffer pool consumer queries. Consider adding RAM, reducing max server memory competition from other processes, or optimizing the top I/O-heavy queries.",
+                ServiceWindow = ServiceWindowAdvisor.No("Observational finding — no schema change required."),
+                Evidence =
+                [
+                    new FindingEvidence("PageLifeExpectancySec", mem.PageLifeExpectancySeconds.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("BufferCacheHitRatioPct", mem.BufferCacheHitRatioPercent.ToString("F1", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("TotalServerMemoryMb", mem.TotalServerMemoryMb.ToString("F0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("TargetServerMemoryMb", mem.TargetServerMemoryMb.ToString("F0", CultureInfo.InvariantCulture)),
+                ],
+            });
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}
+
+internal sealed class SingleUsePlanRatioCheck : IHealthCheck
+{
+    public string Id => "CACHE-001";
+
+    public string Title => "Single-use plan cache ratio";
+
+    public string Category => "Performance";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        var cache = context.Snapshot.PlanCache;
+        if (cache is null)
+        {
+            return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
+        }
+
+        AuditSeverity? severity = cache.SingleUsePlanPercent switch
+        {
+            > 70 => AuditSeverity.Medium,
+            > 40 => AuditSeverity.Low,
+            _ => null,
+        };
+
+        if (severity is null)
+        {
+            return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(
+        [
+            new AuditFinding
+            {
+                Id = "CACHE-001-SINGLE-USE",
+                Title = "High proportion of single-use plans in plan cache",
+                Category = Category,
+                Severity = severity.Value,
+                DatabaseObject = "server",
+                Description = $"{cache.SingleUsePlanPercent:F1}% of cached plans ({cache.SingleUsePlans:N0} of {cache.TotalCachedPlans:N0}) have been used only once. These plans were compiled but never reused, wasting memory and CPU on compilation.",
+                Impact = $"Single-use plans consume {cache.AdHocCacheSizeMb:F0} MB of plan cache memory and indicate repeated compilation overhead for ad hoc queries.",
+                Recommendation = "Enable 'optimize for ad hoc workloads' (CFG-004). Also investigate applications that do not use parameterized queries.",
+                ServiceWindow = ServiceWindowAdvisor.No("sp_configure change takes effect immediately with RECONFIGURE; no restart or service window needed."),
+                FixScript = "EXEC sys.sp_configure N'optimize for ad hoc workloads', 1; RECONFIGURE;",
+                Evidence =
+                [
+                    new FindingEvidence("TotalCachedPlans", cache.TotalCachedPlans.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("SingleUsePlans", cache.SingleUsePlans.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("SingleUsePct", cache.SingleUsePlanPercent.ToString("F1", CultureInfo.InvariantCulture) + "%"),
+                    new FindingEvidence("AdHocCacheMb", cache.AdHocCacheSizeMb.ToString("F0", CultureInfo.InvariantCulture)),
+                ],
+            },
+        ]);
+    }
+}

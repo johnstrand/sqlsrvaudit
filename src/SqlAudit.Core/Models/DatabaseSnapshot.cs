@@ -61,6 +61,22 @@ public sealed class DatabaseSnapshot
     public IReadOnlyList<ColumnInfo> Columns { get; init; } = [];
 
     public IReadOnlyList<ColumnNullStats> ColumnNullStats { get; init; } = [];
+
+    public IReadOnlyList<ServerConfigInfo> ServerConfigurations { get; init; } = [];
+
+    public DateTimeOffset? LastDbccCheckDbUtc { get; init; }
+
+    public TempDbConfigInfo? TempDbConfig { get; init; }
+
+    public IReadOnlyList<SleepingTransactionInfo> SleepingTransactions { get; init; } = [];
+
+    public MemoryPressureInfo? MemoryPressure { get; init; }
+
+    public IReadOnlyList<FileIoLatencyInfo> FileIoLatency { get; init; } = [];
+
+    public PlanCacheInfo? PlanCache { get; init; }
+
+    public IReadOnlyList<TableCompressionInfo> TableCompression { get; init; } = [];
 }
 
 public sealed record TableInfo(
@@ -273,3 +289,48 @@ public sealed record ColumnNullStats(
     string ColumnName);
 
 public sealed record CollectionProgress(string StepName, int Completed, int Total);
+
+public sealed record ServerConfigInfo(string Name, decimal ValueInUse, string Description);
+
+public sealed record TempDbConfigInfo(int DataFileCount, int LogicalCpuCount, IReadOnlyList<decimal> DataFileSizesMb);
+
+public sealed record SleepingTransactionInfo(
+    int SessionId,
+    string LoginName,
+    string DatabaseName,
+    int OpenTransactionCount,
+    decimal ElapsedMinutes,
+    string LastQueryText);
+
+public sealed record MemoryPressureInfo(
+    long PageLifeExpectancySeconds,
+    decimal BufferCacheHitRatioPercent,
+    decimal TotalServerMemoryMb,
+    decimal TargetServerMemoryMb);
+
+public sealed record FileIoLatencyInfo(
+    int DatabaseId,
+    int FileId,
+    string LogicalName,
+    string FileType,
+    long ReadIoCount,
+    long WriteIoCount,
+    decimal AvgReadLatencyMs,
+    decimal AvgWriteLatencyMs,
+    decimal SizeMb);
+
+public sealed record PlanCacheInfo(
+    int TotalCachedPlans,
+    int SingleUsePlans,
+    decimal SingleUsePlanPercent,
+    decimal CacheSizeMb,
+    decimal AdHocCacheSizeMb);
+
+public sealed record TableCompressionInfo(
+    int ObjectId,
+    string SchemaName,
+    string TableName,
+    int PartitionNumber,
+    string DataCompression,
+    long Rows,
+    long UsedPageCount);

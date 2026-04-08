@@ -2,7 +2,7 @@ namespace SqlAudit.Core.Models;
 
 public sealed class AuditReport
 {
-    public string SchemaVersion { get; init; } = "1.3";
+    public string SchemaVersion { get; init; } = "1.4";
 
     public required string ServerName { get; init; }
 
@@ -47,6 +47,22 @@ public sealed class AuditReport
     public IReadOnlyList<TableGrowthForecastInfo> TableGrowthForecasts { get; init; } = [];
 
     public IReadOnlyList<CollectionWarning> CollectionWarnings { get; init; } = [];
+
+    public IReadOnlyList<ServerConfigInfo> ServerConfigurations { get; init; } = [];
+
+    public DateTimeOffset? LastDbccCheckDbUtc { get; init; }
+
+    public TempDbConfigInfo? TempDbConfig { get; init; }
+
+    public IReadOnlyList<SleepingTransactionInfo> SleepingTransactions { get; init; } = [];
+
+    public MemoryPressureInfo? MemoryPressure { get; init; }
+
+    public IReadOnlyList<FileIoLatencyInfo> FileIoLatency { get; init; } = [];
+
+    public PlanCacheInfo? PlanCache { get; init; }
+
+    public IReadOnlyList<TableCompressionInfo> TableCompression { get; init; } = [];
 
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 

@@ -14,7 +14,7 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken,
         IProgress<CollectionProgress>? progress = null)
     {
-        var totalSteps = profile == AuditProfile.Deep ? 21 : 18;
+        var totalSteps = profile == AuditProfile.Deep ? 29 : 25;
         var completed = 0;
 
         void Report(string stepName)
@@ -109,6 +109,48 @@ public sealed class SqlServerSnapshotCollector
         Report("Identity columns");
         var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
 
+        Report("Server configurations");
+        var serverConfigurations = await TryReadOptionalListAsync(
+            () => ReadServerConfigurationsAsync(connection, cancellationToken),
+            warnings,
+            "Server Configurations").ConfigureAwait(false);
+
+        Report("Integrity check history");
+        var lastDbccCheckDb = await TryReadOptionalStructAsync(
+            () => ReadLastDbccCheckDbAsync(connection, cancellationToken)).ConfigureAwait(false);
+
+        Report("TempDB configuration");
+        var tempDbConfig = await TryReadOptionalAsync(
+            () => ReadTempDbConfigAsync(connection, cancellationToken)).ConfigureAwait(false);
+
+        Report("Sleeping transactions");
+        var sleepingTransactions = await TryReadOptionalListAsync(
+            () => ReadSleepingTransactionsAsync(connection, cancellationToken),
+            warnings,
+            "Sleeping Transactions").ConfigureAwait(false);
+
+        Report("Memory pressure");
+        var memoryPressure = await TryReadOptionalAsync(
+            () => ReadMemoryPressureAsync(connection, cancellationToken)).ConfigureAwait(false);
+
+        Report("File I/O latency");
+        var fileIoLatency = await TryReadOptionalListAsync(
+            () => ReadFileIoLatencyAsync(connection, cancellationToken),
+            warnings,
+            "File I/O Latency").ConfigureAwait(false);
+
+        Report("Plan cache");
+        var planCache = await TryReadOptionalAsync(
+            () => ReadPlanCacheAsync(connection, cancellationToken)).ConfigureAwait(false);
+
+        Report("Table compression");
+        var tableCompression = profile == AuditProfile.Deep
+            ? await TryReadOptionalListAsync(
+                () => ReadTableCompressionAsync(connection, cancellationToken),
+                warnings,
+                "Table Compression").ConfigureAwait(false)
+            : (IReadOnlyList<TableCompressionInfo>)[];
+
         var snapshot = new DatabaseSnapshot
         {
             CapturedAtUtc = DateTimeOffset.UtcNow,
@@ -141,6 +183,14 @@ public sealed class SqlServerSnapshotCollector
             CollectionWarnings = warnings,
             Columns = columns,
             ColumnNullStats = columnNullStats,
+            ServerConfigurations = serverConfigurations,
+            LastDbccCheckDbUtc = lastDbccCheckDb,
+            TempDbConfig = tempDbConfig,
+            SleepingTransactions = sleepingTransactions,
+            MemoryPressure = memoryPressure,
+            FileIoLatency = fileIoLatency,
+            PlanCache = planCache,
+            TableCompression = tableCompression,
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
@@ -228,6 +278,16 @@ public sealed class SqlServerSnapshotCollector
                 .Where(c => tableIds.Contains(c.ObjectId))
                 .ToArray(),
             ColumnNullStats = snapshot.ColumnNullStats
+                .Where(c => tableIds.Contains(c.ObjectId))
+                .ToArray(),
+            ServerConfigurations = snapshot.ServerConfigurations,
+            LastDbccCheckDbUtc = snapshot.LastDbccCheckDbUtc,
+            TempDbConfig = snapshot.TempDbConfig,
+            SleepingTransactions = snapshot.SleepingTransactions,
+            MemoryPressure = snapshot.MemoryPressure,
+            FileIoLatency = snapshot.FileIoLatency,
+            PlanCache = snapshot.PlanCache,
+            TableCompression = snapshot.TableCompression
                 .Where(c => tableIds.Contains(c.ObjectId))
                 .ToArray(),
         };
@@ -1598,6 +1658,19 @@ public sealed class SqlServerSnapshotCollector
         }
     }
 
+    private static async Task<T?> TryReadOptionalStructAsync<T>(Func<Task<T?>> read)
+        where T : struct
+    {
+        try
+        {
+            return await read().ConfigureAwait(false);
+        }
+        catch (SqlException)
+        {
+            return null;
+        }
+    }
+
     private static AuditSeverity ParseSeverity(string value)
     {
         return Enum.TryParse<AuditSeverity>(value, ignoreCase: true, out var severity)
@@ -1653,6 +1726,273 @@ public sealed class SqlServerSnapshotCollector
         bool AutoCreateStatisticsOn,
         bool AutoUpdateStatisticsOn,
         bool IsAzureSql);
+
+    private static async Task<IReadOnlyList<ServerConfigInfo>> ReadServerConfigurationsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT name, value_in_use, description
+            FROM sys.configurations
+            ORDER BY name
+            """;
+        return await ReadListAsync(
+            connection,
+            sql,
+            r => new ServerConfigInfo(
+                SqlRead.String(r, "name"),
+                SqlRead.Decimal(r, "value_in_use"),
+                SqlRead.String(r, "description")),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<DateTimeOffset?> ReadLastDbccCheckDbAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            DBCC DBINFO() WITH TABLERESULTS, NO_INFOMSGS
+            """;
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 60,
+        };
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var field = SqlRead.String(reader, "Field");
+            if (field.Equals("dbi_dbccLastKnownGood", StringComparison.OrdinalIgnoreCase))
+            {
+                var val = SqlRead.String(reader, "Value");
+                if (DateTimeOffset.TryParse(val, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dt)
+                    && dt.Year > 1900)
+                {
+                    return dt;
+                }
+
+                return null;
+            }
+        }
+
+        return null;
+    }
+
+    private static async Task<TempDbConfigInfo?> ReadTempDbConfigAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string filesSql = """
+            SELECT size * 8.0 / 1024 AS size_mb
+            FROM tempdb.sys.database_files
+            WHERE type = 0
+            """;
+        var fileSizes = await ReadListAsync(
+            connection,
+            filesSql,
+            r => SqlRead.Decimal(r, "size_mb"),
+            cancellationToken).ConfigureAwait(false);
+
+        int logicalCpuCount;
+        try
+        {
+            const string cpuSql = "SELECT cpu_count FROM sys.dm_os_sys_info";
+            await using var cmd = new SqlCommand(cpuSql, connection)
+            {
+                CommandTimeout = 30,
+            };
+            var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+            logicalCpuCount = result is DBNull || result is null ? 0 : Convert.ToInt32(result);
+        }
+        catch (SqlException)
+        {
+            logicalCpuCount = 0;
+        }
+
+        return new TempDbConfigInfo(fileSizes.Count, logicalCpuCount, fileSizes);
+    }
+
+    private static async Task<IReadOnlyList<SleepingTransactionInfo>> ReadSleepingTransactionsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                s.session_id,
+                s.login_name,
+                DB_NAME(s.database_id) AS database_name,
+                s.open_transaction_count,
+                s.total_elapsed_time / 60000.0 AS elapsed_minutes,
+                ISNULL(CAST(t.text AS NVARCHAR(300)), N'') AS last_query_text
+            FROM sys.dm_exec_sessions AS s
+            OUTER APPLY sys.dm_exec_sql_text(s.most_recent_sql_handle) AS t
+            WHERE s.status = 'sleeping'
+              AND s.open_transaction_count > 0
+              AND s.session_id <> @@SPID
+            ORDER BY s.total_elapsed_time DESC
+            """;
+        return await ReadListAsync(
+            connection,
+            sql,
+            r => new SleepingTransactionInfo(
+                SqlRead.Int(r, "session_id"),
+                SqlRead.String(r, "login_name"),
+                SqlRead.String(r, "database_name"),
+                SqlRead.Int(r, "open_transaction_count"),
+                SqlRead.Decimal(r, "elapsed_minutes"),
+                SqlRead.String(r, "last_query_text")),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<MemoryPressureInfo?> ReadMemoryPressureAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT object_name, counter_name, cntr_value
+            FROM sys.dm_os_performance_counters
+            WHERE (object_name LIKE '%Buffer Manager%'
+                   AND counter_name IN ('Page life expectancy', 'Buffer cache hit ratio', 'Buffer cache hit ratio base'))
+               OR (object_name LIKE '%Memory Manager%'
+                   AND counter_name IN ('Total Server Memory (KB)', 'Target Server Memory (KB)'))
+            """;
+        var counters = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30,
+        };
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var counterName = SqlRead.String(reader, "counter_name").Trim();
+            var value = SqlRead.Long(reader, "cntr_value");
+            counters[counterName] = value;
+        }
+
+        if (!counters.TryGetValue("Page life expectancy", out var ple))
+        {
+            return null;
+        }
+
+        counters.TryGetValue("Buffer cache hit ratio", out var hitRatioRaw);
+        counters.TryGetValue("Buffer cache hit ratio base", out var hitRatioBase);
+        counters.TryGetValue("Total Server Memory (KB)", out var totalKb);
+        counters.TryGetValue("Target Server Memory (KB)", out var targetKb);
+
+        var hitRatio = hitRatioBase > 0
+            ? Math.Round((decimal)hitRatioRaw / hitRatioBase * 100, 1)
+            : 0m;
+
+        return new MemoryPressureInfo(
+            ple,
+            hitRatio,
+            Math.Round(totalKb / 1024m, 1),
+            Math.Round(targetKb / 1024m, 1));
+    }
+
+    private static async Task<IReadOnlyList<FileIoLatencyInfo>> ReadFileIoLatencyAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                f.database_id,
+                f.file_id,
+                mf.name AS logical_name,
+                CASE mf.type WHEN 0 THEN 'ROWS' WHEN 1 THEN 'LOG' ELSE 'OTHER' END AS file_type,
+                f.num_of_reads,
+                f.num_of_writes,
+                CASE WHEN f.num_of_reads = 0 THEN 0
+                     ELSE CAST(f.io_stall_read / f.num_of_reads AS DECIMAL(10,2)) END AS avg_read_latency_ms,
+                CASE WHEN f.num_of_writes = 0 THEN 0
+                     ELSE CAST(f.io_stall_write / f.num_of_writes AS DECIMAL(10,2)) END AS avg_write_latency_ms,
+                mf.size * 8.0 / 1024 AS size_mb
+            FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS f
+            INNER JOIN sys.master_files AS mf
+                ON f.database_id = mf.database_id AND f.file_id = mf.file_id
+            ORDER BY f.database_id, f.file_id
+            """;
+        return await ReadListAsync(
+            connection,
+            sql,
+            r => new FileIoLatencyInfo(
+                SqlRead.Int(r, "database_id"),
+                SqlRead.Int(r, "file_id"),
+                SqlRead.String(r, "logical_name"),
+                SqlRead.String(r, "file_type"),
+                SqlRead.Long(r, "num_of_reads"),
+                SqlRead.Long(r, "num_of_writes"),
+                SqlRead.Decimal(r, "avg_read_latency_ms"),
+                SqlRead.Decimal(r, "avg_write_latency_ms"),
+                SqlRead.Decimal(r, "size_mb")),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<PlanCacheInfo?> ReadPlanCacheAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                COUNT(1) AS total_plans,
+                SUM(CASE WHEN usecounts = 1 THEN 1 ELSE 0 END) AS single_use_plans,
+                CAST(SUM(CASE WHEN usecounts = 1 THEN 1 ELSE 0 END) * 100.0
+                     / NULLIF(COUNT(1), 0) AS DECIMAL(5,1)) AS single_use_pct,
+                CAST(SUM(size_in_bytes) / 1048576.0 AS DECIMAL(10,1)) AS cache_size_mb,
+                CAST(SUM(CASE WHEN objtype = 'Adhoc' THEN size_in_bytes ELSE 0 END) / 1048576.0
+                     AS DECIMAL(10,1)) AS adhoc_cache_size_mb
+            FROM sys.dm_exec_cached_plans
+            """;
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 60,
+        };
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new PlanCacheInfo(
+                SqlRead.Int(reader, "total_plans"),
+                SqlRead.Int(reader, "single_use_plans"),
+                SqlRead.Decimal(reader, "single_use_pct"),
+                SqlRead.Decimal(reader, "cache_size_mb"),
+                SqlRead.Decimal(reader, "adhoc_cache_size_mb"));
+        }
+
+        return null;
+    }
+
+    private static async Task<IReadOnlyList<TableCompressionInfo>> ReadTableCompressionAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                t.object_id,
+                s.name AS schema_name,
+                t.name AS table_name,
+                p.partition_number,
+                p.data_compression_desc,
+                p.rows,
+                ps.used_page_count
+            FROM sys.tables AS t
+            INNER JOIN sys.schemas AS s ON t.schema_id = s.schema_id
+            INNER JOIN sys.partitions AS p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
+            INNER JOIN sys.dm_db_partition_stats AS ps
+                ON p.object_id = ps.object_id AND p.partition_number = ps.partition_number AND ps.index_id IN (0, 1)
+            ORDER BY ps.used_page_count DESC
+            """;
+        return await ReadListAsync(
+            connection,
+            sql,
+            r => new TableCompressionInfo(
+                SqlRead.Int(r, "object_id"),
+                SqlRead.String(r, "schema_name"),
+                SqlRead.String(r, "table_name"),
+                SqlRead.Int(r, "partition_number"),
+                SqlRead.String(r, "data_compression_desc"),
+                SqlRead.Long(r, "rows"),
+                SqlRead.Long(r, "used_page_count")),
+            cancellationToken).ConfigureAwait(false);
+    }
 }
 
 internal static class SqlRead

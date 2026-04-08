@@ -27,7 +27,13 @@ public static class MarkdownReportRenderer
         WriteTempDbPressure(sb, report);
         WriteFileGrowthHealth(sb, report);
         WriteBackupPosture(sb, report);
+        WriteIntegrityCheckHistory(sb, report);
         WriteSecurityHygiene(sb, report);
+        WriteInstanceConfiguration(sb, report);
+        WriteMemoryPressure(sb, report);
+        WriteFileIoLatency(sb, report);
+        WritePlanCacheHealth(sb, report);
+        WriteSleepingTransactions(sb, report);
         WriteGrowthForecasts(sb, report);
         WriteFindings(sb, report);
 
@@ -659,4 +665,154 @@ public static class MarkdownReportRenderer
         AuditSeverity.Low => 2,
         _ => 1,
     };
+
+    private static void WriteIntegrityCheckHistory(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Integrity Check History (DBCC CHECKDB)");
+        sb.AppendLine();
+        if (report.LastDbccCheckDbUtc is null)
+        {
+            sb.AppendLine("Last DBCC CHECKDB timestamp is unavailable (not yet run or permission denied).");
+        }
+        else
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"- Last DBCC CHECKDB (UTC): `{report.LastDbccCheckDbUtc.Value:u}`");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteInstanceConfiguration(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Instance Configuration");
+        sb.AppendLine();
+
+        if (report.ServerConfigurations.Count == 0)
+        {
+            sb.AppendLine("Server configuration data not available.");
+            sb.AppendLine();
+            return;
+        }
+
+        var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "max degree of parallelism",
+            "cost threshold for parallelism",
+            "optimize for ad hoc workloads",
+            "max server memory (MB)",
+            "min server memory (MB)",
+            "blocked process threshold (s)",
+        };
+
+        sb.AppendLine("| Setting | Value |");
+        sb.AppendLine("|---|---:|");
+
+        foreach (var cfg in report.ServerConfigurations.Where(c => keys.Contains(c.Name)))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(cfg.Name)}` | {cfg.ValueInUse:G} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteMemoryPressure(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Memory Pressure");
+        sb.AppendLine();
+
+        if (report.MemoryPressure is null)
+        {
+            sb.AppendLine("Memory pressure telemetry not available (VIEW SERVER STATE may be required).");
+            sb.AppendLine();
+            return;
+        }
+
+        var mem = report.MemoryPressure;
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Page Life Expectancy: **{mem.PageLifeExpectancySeconds:N0}s** (target: ≥300s)");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Buffer Cache Hit Ratio: {mem.BufferCacheHitRatioPercent:F1}%");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Total Server Memory: {mem.TotalServerMemoryMb:F0} MB");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Target Server Memory: {mem.TargetServerMemoryMb:F0} MB");
+        sb.AppendLine();
+    }
+
+    private static void WriteFileIoLatency(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### File I/O Latency");
+        sb.AppendLine();
+
+        if (report.FileIoLatency.Count == 0)
+        {
+            sb.AppendLine("File I/O latency data not available (VIEW SERVER STATE may be required).");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| DB | File | Type | Size (MB) | Avg Read (ms) | Avg Write (ms) |");
+        sb.AppendLine("|---|---|---|---:|---:|---:|");
+
+        foreach (var file in report.FileIoLatency.OrderByDescending(f => Math.Max(f.AvgReadLatencyMs, f.AvgWriteLatencyMs)).Take(20))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| {file.DatabaseId} | `{EscapeInline(file.LogicalName)}` | {EscapeInline(file.FileType)} | {file.SizeMb:F0} | {file.AvgReadLatencyMs:F1} | {file.AvgWriteLatencyMs:F1} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WritePlanCacheHealth(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Plan Cache Health");
+        sb.AppendLine();
+
+        if (report.PlanCache is null)
+        {
+            sb.AppendLine("Plan cache telemetry not available (VIEW SERVER STATE may be required).");
+            sb.AppendLine();
+            return;
+        }
+
+        var cache = report.PlanCache;
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Total cached plans: {cache.TotalCachedPlans:N0}");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Single-use plans: {cache.SingleUsePlans:N0} ({cache.SingleUsePlanPercent:F1}%)");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Total cache size: {cache.CacheSizeMb:F0} MB");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+            $"- Ad hoc cache size: {cache.AdHocCacheSizeMb:F0} MB");
+        sb.AppendLine();
+    }
+
+    private static void WriteSleepingTransactions(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Sleeping Sessions with Open Transactions");
+        sb.AppendLine();
+
+        if (report.SleepingTransactions.Count == 0)
+        {
+            sb.AppendLine("No sleeping sessions with open transactions detected.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Session | Login | Database | Open Txns | Elapsed (min) | Last Query |");
+        sb.AppendLine("|---|---|---|---:|---:|---|");
+
+        foreach (var s in report.SleepingTransactions.Take(15))
+        {
+            var queryPreview = s.LastQueryText.Length > 60
+                ? string.Concat(s.LastQueryText.AsSpan(0, 60), "...")
+                : s.LastQueryText;
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| {s.SessionId} | `{EscapeInline(s.LoginName)}` | `{EscapeInline(s.DatabaseName)}` | {s.OpenTransactionCount} | {s.ElapsedMinutes:F1} | `{EscapeInline(queryPreview)}` |");
+        }
+
+        sb.AppendLine();
+    }
 }

@@ -29,6 +29,21 @@ public static class SqlServerHealthChecks
         new("WAIT-002", QuickEnabled: true, DeepEnabled: true, () => new CpuPressureCheck()),
         new("COL-001", QuickEnabled: false, DeepEnabled: true, () => new NullableColumnWithNoNullsCheck()),
         new("COL-002", QuickEnabled: true, DeepEnabled: true, () => new OversizedStringColumnCheck()),
+        new("CFG-002", QuickEnabled: true, DeepEnabled: true, () => new MaxDopConfigurationCheck()),
+        new("CFG-003", QuickEnabled: true, DeepEnabled: true, () => new CostThresholdForParallelismCheck()),
+        new("CFG-004", QuickEnabled: true, DeepEnabled: true, () => new OptimizeForAdHocWorkloadsCheck()),
+        new("CFG-005", QuickEnabled: true, DeepEnabled: true, () => new MaxServerMemoryCheck()),
+        new("TMPDB-001", QuickEnabled: true, DeepEnabled: true, () => new TempDbFileCountCheck()),
+        new("TMPDB-002", QuickEnabled: true, DeepEnabled: true, () => new TempDbFileSizeEqualityCheck()),
+        new("MAINT-001", QuickEnabled: true, DeepEnabled: true, () => new IntegrityCheckRecencyCheck()),
+        new("IDX-009", QuickEnabled: true, DeepEnabled: true, () => new ScanHeavyIndexCheck()),
+        new("IDX-010", QuickEnabled: true, DeepEnabled: true, () => new WriteAmplificationIndexCheck()),
+        new("SESS-001", QuickEnabled: true, DeepEnabled: true, () => new SleepingOpenTransactionCheck()),
+        new("MEM-001", QuickEnabled: true, DeepEnabled: true, () => new PageLifeExpectancyCheck()),
+        new("IO-001", QuickEnabled: true, DeepEnabled: true, () => new DataFileReadLatencyCheck()),
+        new("IO-002", QuickEnabled: true, DeepEnabled: true, () => new LogFileWriteLatencyCheck()),
+        new("CACHE-001", QuickEnabled: true, DeepEnabled: true, () => new SingleUsePlanRatioCheck()),
+        new("COMP-001", QuickEnabled: false, DeepEnabled: true, () => new UncompressedLargeTableCheck()),
     ];
 
     public static IReadOnlyCollection<IHealthCheck> Create(

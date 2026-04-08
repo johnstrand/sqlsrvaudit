@@ -300,6 +300,15 @@ public sealed class SqlServerChecksExecutionTests
         IReadOnlyList<ColumnInfo>? columns = null,
         IReadOnlyList<ColumnNullStats>? columnNullStats = null,
         IReadOnlyList<WaitStatInfo>? waitStats = null,
+        IReadOnlyList<ServerConfigInfo>? serverConfigurations = null,
+        IReadOnlyList<SleepingTransactionInfo>? sleepingTransactions = null,
+        IReadOnlyList<FileIoLatencyInfo>? fileIoLatency = null,
+        IReadOnlyList<TableCompressionInfo>? tableCompression = null,
+        TempDbConfigInfo? tempDbConfig = null,
+        MemoryPressureInfo? memoryPressure = null,
+        PlanCacheInfo? planCache = null,
+        DateTimeOffset? lastDbccCheckDbUtc = null,
+        DateTimeOffset? capturedAtUtc = null,
         bool autoCreateStatisticsOn = true,
         bool autoUpdateStatisticsOn = true,
         string productVersion = "16.0",
@@ -328,6 +337,15 @@ public sealed class SqlServerChecksExecutionTests
                 Columns = columns ?? [],
                 ColumnNullStats = columnNullStats ?? [],
                 TopWaitStats = waitStats ?? [],
+                ServerConfigurations = serverConfigurations ?? [],
+                SleepingTransactions = sleepingTransactions ?? [],
+                FileIoLatency = fileIoLatency ?? [],
+                TableCompression = tableCompression ?? [],
+                TempDbConfig = tempDbConfig,
+                MemoryPressure = memoryPressure,
+                PlanCache = planCache,
+                LastDbccCheckDbUtc = lastDbccCheckDbUtc,
+                CapturedAtUtc = capturedAtUtc ?? DateTimeOffset.UtcNow,
             },
             Options = AuditOptions.Default,
         };
@@ -429,6 +447,292 @@ public sealed class SqlServerChecksExecutionTests
         Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes",       StringComparison.Ordinal) && f.Severity == AuditSeverity.Medium);
         Assert.Contains(findings, f => f.DatabaseObject.Contains("Description", StringComparison.Ordinal));
         Assert.DoesNotContain(findings, f => f.DatabaseObject.Contains("Code", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task MaxDopConfigurationCheck_FlagsMagDopZero()
+    {
+        var context = CreateContext(serverConfigurations:
+        [
+            new ServerConfigInfo("max degree of parallelism", 0, "max degree of parallelism"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("CFG-002-MAXDOP-ZERO", finding.Id);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+    }
+
+    [Fact]
+    public async Task MaxDopConfigurationCheck_NoFindingWhenMaxdopIsSet()
+    {
+        var context = CreateContext(serverConfigurations:
+        [
+            new ServerConfigInfo("max degree of parallelism", 8, "max degree of parallelism"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-002", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task CostThresholdForParallelismCheck_FlagsDefaultValue()
+    {
+        var context = CreateContext(serverConfigurations:
+        [
+            new ServerConfigInfo("cost threshold for parallelism", 5, "cost threshold for parallelism"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-003", context);
+
+        Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, Assert.Single(findings).Severity);
+    }
+
+    [Fact]
+    public async Task OptimizeForAdHocWorkloadsCheck_FlagsWhenDisabled()
+    {
+        var context = CreateContext(serverConfigurations:
+        [
+            new ServerConfigInfo("optimize for ad hoc workloads", 0, "optimize for ad hoc workloads"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-004", context);
+
+        Assert.Equal("CFG-004-ADHOC-OFF", Assert.Single(findings).Id);
+    }
+
+    [Fact]
+    public async Task MaxServerMemoryCheck_FlagsUnlimitedDefault()
+    {
+        var context = CreateContext(serverConfigurations:
+        [
+            new ServerConfigInfo("max server memory (MB)", 2147483647, "max server memory"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-005", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task TempDbFileCountCheck_FlagsWhenFewerFilesThanCpus()
+    {
+        var context = CreateContext(tempDbConfig: new TempDbConfigInfo(DataFileCount: 1, LogicalCpuCount: 8, DataFileSizesMb: [8m]));
+
+        var findings = await ExecuteCheckAsync("TMPDB-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+        Assert.Contains("1", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TempDbFileSizeEqualityCheck_FlagsUnequalFiles()
+    {
+        var context = CreateContext(tempDbConfig: new TempDbConfigInfo(DataFileCount: 4, LogicalCpuCount: 8, DataFileSizesMb: [8m, 8m, 8m, 1000m]));
+
+        var findings = await ExecuteCheckAsync("TMPDB-002", context);
+
+        Assert.Equal(AuditSeverity.Low, Assert.Single(findings).Severity);
+    }
+
+    [Fact]
+    public async Task TempDbFileSizeEqualityCheck_NoFindingWhenFilesEqual()
+    {
+        var context = CreateContext(tempDbConfig: new TempDbConfigInfo(DataFileCount: 4, LogicalCpuCount: 8, DataFileSizesMb: [512m, 512m, 512m, 512m]));
+
+        var findings = await ExecuteCheckAsync("TMPDB-002", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task SleepingOpenTransactionCheck_FlagsLongIdleSession()
+    {
+        var context = CreateContext(sleepingTransactions:
+        [
+            new SleepingTransactionInfo(SessionId: 55, LoginName: "AppUser", DatabaseName: "DbA", OpenTransactionCount: 1, ElapsedMinutes: 45m, LastQueryText: "SELECT 1"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("SESS-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("55", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SleepingOpenTransactionCheck_NoFindingForRecentSession()
+    {
+        var context = CreateContext(sleepingTransactions:
+        [
+            new SleepingTransactionInfo(SessionId: 55, LoginName: "AppUser", DatabaseName: "DbA", OpenTransactionCount: 1, ElapsedMinutes: 1m, LastQueryText: "SELECT 1"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("SESS-001", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task PageLifeExpectancyCheck_FlagsLowPle()
+    {
+        var context = CreateContext(memoryPressure: new MemoryPressureInfo(
+            PageLifeExpectancySeconds: 120,
+            BufferCacheHitRatioPercent: 98m,
+            TotalServerMemoryMb: 4096m,
+            TargetServerMemoryMb: 4096m));
+
+        var findings = await ExecuteCheckAsync("MEM-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task PageLifeExpectancyCheck_NoFindingForHealthyServer()
+    {
+        var context = CreateContext(memoryPressure: new MemoryPressureInfo(
+            PageLifeExpectancySeconds: 5000,
+            BufferCacheHitRatioPercent: 99.5m,
+            TotalServerMemoryMb: 32768m,
+            TargetServerMemoryMb: 32768m));
+
+        var findings = await ExecuteCheckAsync("MEM-001", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task SingleUsePlanRatioCheck_FlagsHighAdHocRatio()
+    {
+        var context = CreateContext(planCache: new PlanCacheInfo(
+            TotalCachedPlans: 1000,
+            SingleUsePlans: 750,
+            SingleUsePlanPercent: 75m,
+            CacheSizeMb: 512m,
+            AdHocCacheSizeMb: 350m));
+
+        var findings = await ExecuteCheckAsync("CACHE-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+    }
+
+    [Fact]
+    public async Task DataFileReadLatencyCheck_FlagsHighLatency()
+    {
+        var context = CreateContext(fileIoLatency:
+        [
+            new FileIoLatencyInfo(DatabaseId: 1, FileId: 1, LogicalName: "mydb_data", FileType: "ROWS", ReadIoCount: 10000, WriteIoCount: 5000, AvgReadLatencyMs: 60m, AvgWriteLatencyMs: 2m, SizeMb: 1024m),
+        ]);
+
+        var findings = await ExecuteCheckAsync("IO-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("mydb_data", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LogFileWriteLatencyCheck_FlagsHighLatency()
+    {
+        var context = CreateContext(fileIoLatency:
+        [
+            new FileIoLatencyInfo(DatabaseId: 1, FileId: 2, LogicalName: "mydb_log", FileType: "LOG", ReadIoCount: 100, WriteIoCount: 50000, AvgReadLatencyMs: 0m, AvgWriteLatencyMs: 25m, SizeMb: 256m),
+        ]);
+
+        var findings = await ExecuteCheckAsync("IO-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task IntegrityCheckRecencyCheck_FlagsStaleCheckDb()
+    {
+        var lastCheck = DateTimeOffset.UtcNow.AddDays(-15);
+        var context = CreateContext(lastDbccCheckDbUtc: lastCheck);
+
+        var findings = await ExecuteCheckAsync("MAINT-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("MAINT-001-STALE", finding.Id);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+    }
+
+    [Fact]
+    public async Task IntegrityCheckRecencyCheck_FlagsNullAsInfo()
+    {
+        var context = CreateContext();
+
+        var findings = await ExecuteCheckAsync("MAINT-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("MAINT-001-UNKNOWN", finding.Id);
+        Assert.Equal(AuditSeverity.Info, finding.Severity);
+    }
+
+    [Fact]
+    public async Task ScanHeavyIndexCheck_FlagsHighScanToSeekRatio()
+    {
+        var index = CreateIndex(objectId: 1, indexId: 2, indexName: "IX_Orders_Status");
+        var usageRecord = new IndexUsageInfo(
+            ObjectId: 1,
+            IndexId: 2,
+            UserSeeks: 10,
+            UserScans: 5000,
+            UserLookups: 0,
+            UserUpdates: 500,
+            LastReadUtc: null);
+        var context = CreateContext(indexes: [index], usage: [usageRecord]);
+
+        var findings = await ExecuteCheckAsync("IDX-009", context);
+
+        Assert.Equal(AuditSeverity.Info, Assert.Single(findings).Severity);
+    }
+
+    [Fact]
+    public async Task WriteAmplificationIndexCheck_FlagsHighWriteLowReadIndex()
+    {
+        var index = CreateIndex(objectId: 1, indexId: 2, indexName: "IX_Orders_Junk");
+        var usageRecord = new IndexUsageInfo(
+            ObjectId: 1,
+            IndexId: 2,
+            UserSeeks: 0,
+            UserScans: 5,
+            UserLookups: 0,
+            UserUpdates: 50_000,
+            LastReadUtc: null);
+        var context = CreateContext(indexes: [index], usage: [usageRecord]);
+
+        var findings = await ExecuteCheckAsync("IDX-010", context);
+
+        Assert.Equal(AuditSeverity.Medium, Assert.Single(findings).Severity);
+    }
+
+    [Fact]
+    public async Task UncompressedLargeTableCheck_FlagsLargeUncompressedTable()
+    {
+        var context = CreateContext(
+            tables:
+            [
+                new TableInfo(1, "dbo", "Orders", 1_000_000, 200m, HasPrimaryKey: true, IsHeap: false),
+            ],
+            tableCompression:
+            [
+                new TableCompressionInfo(ObjectId: 1, SchemaName: "dbo", TableName: "Orders", PartitionNumber: 1, DataCompression: "NONE", Rows: 1_000_000, UsedPageCount: 50_000),
+            ]);
+
+        var findings = await ExecuteCheckAsync("COMP-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Info, finding.Severity);
+        Assert.Contains("REBUILD", finding.FixScript, StringComparison.Ordinal);
     }
 
     private static IndexInfo CreateIndex(

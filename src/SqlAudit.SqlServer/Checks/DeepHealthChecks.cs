@@ -1063,3 +1063,184 @@ internal sealed class OverWideIndexKeyCheck : IHealthCheck
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
     }
 }
+
+internal sealed class ScanHeavyIndexCheck : IHealthCheck
+{
+    public string Id => "IDX-009";
+
+    public string Title => "Scan-heavy indexes";
+
+    public string Category => "Indexes";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        const long minReads = 1000;
+        const int scanToSeekRatioThreshold = 10;
+
+        var findings = new List<AuditFinding>();
+
+        foreach (var usage in context.Snapshot.IndexUsage
+            .Where(u => u.IndexId > 1
+                        && (u.UserSeeks + u.UserScans + u.UserLookups) >= minReads
+                        && u.UserScans > 0
+                        && u.UserScans / (u.UserSeeks + 1L) > scanToSeekRatioThreshold))
+        {
+            var index = context.Snapshot.Indexes.FirstOrDefault(
+                i => i.ObjectId == usage.ObjectId && i.IndexId == usage.IndexId);
+            if (index is null)
+            {
+                continue;
+            }
+
+            var tableName = SqlName.Table(index.SchemaName, index.TableName);
+            findings.Add(new AuditFinding
+            {
+                Id = $"IDX-009-{usage.ObjectId}-{usage.IndexId}",
+                Title = "Non-clustered index is scan-heavy",
+                Category = Category,
+                Severity = AuditSeverity.Info,
+                DatabaseObject = $"{tableName}.{SqlName.Index(index.IndexName)}",
+                Description = $"Index '{index.IndexName}' has {usage.UserScans:N0} scans vs {usage.UserSeeks:N0} seeks (ratio {usage.UserScans / (usage.UserSeeks + 1L):N0}:1). High scan ratios on non-clustered indexes suggest missing columns in the index, poor column selectivity, or queries that should use the clustered index instead.",
+                Impact = "Non-clustered index scans can be slower than clustered index scans for large ranges and may indicate a suboptimal query or index design.",
+                Recommendation = "Analyze the queries driving scans. Consider adding covering columns, reviewing WHERE clause selectivity, or removing the index if scans are replacing clustered index access.",
+                ServiceWindow = ServiceWindowAdvisor.No("Observational finding — no schema change required."),
+                Evidence =
+                [
+                    new FindingEvidence("UserSeeks", usage.UserSeeks.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("UserScans", usage.UserScans.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("ScanToSeekRatio", (usage.UserScans / (usage.UserSeeks + 1L)).ToString(CultureInfo.InvariantCulture)),
+                    new FindingEvidence("KeyColumns", index.KeyColumns),
+                ],
+            });
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}
+
+internal sealed class WriteAmplificationIndexCheck : IHealthCheck
+{
+    public string Id => "IDX-010";
+
+    public string Title => "Write-amplification indexes";
+
+    public string Category => "Indexes";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        const long minUpdates = 10_000;
+        const long maxReads = 10;
+
+        var findings = new List<AuditFinding>();
+
+        foreach (var usage in context.Snapshot.IndexUsage
+            .Where(u => u.IndexId > 1
+                        && u.UserUpdates >= minUpdates
+                        && (u.UserSeeks + u.UserScans + u.UserLookups) <= maxReads))
+        {
+            var index = context.Snapshot.Indexes.FirstOrDefault(
+                i => i.ObjectId == usage.ObjectId && i.IndexId == usage.IndexId);
+            if (index is null)
+            {
+                continue;
+            }
+
+            var tableName = SqlName.Table(index.SchemaName, index.TableName);
+            findings.Add(new AuditFinding
+            {
+                Id = $"IDX-010-{usage.ObjectId}-{usage.IndexId}",
+                Title = "Index has high writes with near-zero reads",
+                Category = Category,
+                Severity = AuditSeverity.Medium,
+                DatabaseObject = $"{tableName}.{SqlName.Index(index.IndexName)}",
+                Description = $"Index '{index.IndexName}' has been updated {usage.UserUpdates:N0} times but only read {usage.UserSeeks + usage.UserScans + usage.UserLookups:N0} times since last restart. This index is consuming write overhead without providing read benefit.",
+                Impact = "Every INSERT, UPDATE, and DELETE on the table must also maintain this index, increasing write latency and log volume.",
+                Recommendation = "Verify the index is not relied on by maintenance or one-off queries, then consider dropping it.",
+                ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
+                    AuditOperationRisk.MetadataOnly,
+                    "Dropping an index acquires a brief schema-modification lock."),
+                FixScript = $"""
+                    -- RequiresServiceWindow: false
+                    -- Validate with a brief monitoring period before dropping.
+                    DROP INDEX {SqlName.Index(index.IndexName)} ON {tableName};
+                    """,
+                Evidence =
+                [
+                    new FindingEvidence("UserUpdates", usage.UserUpdates.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("TotalReads", (usage.UserSeeks + usage.UserScans + usage.UserLookups).ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("KeyColumns", index.KeyColumns),
+                ],
+            });
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}
+
+internal sealed class IntegrityCheckRecencyCheck : IHealthCheck
+{
+    public string Id => "MAINT-001";
+
+    public string Title => "Database integrity check recency";
+
+    public string Category => "Maintenance";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        var lastCheck = context.Snapshot.LastDbccCheckDbUtc;
+
+        if (lastCheck is null)
+        {
+            return Task.FromResult<IReadOnlyCollection<AuditFinding>>(
+            [
+                new AuditFinding
+                {
+                    Id = "MAINT-001-UNKNOWN",
+                    Title = "Database integrity check: history unavailable",
+                    Category = Category,
+                    Severity = AuditSeverity.Info,
+                    DatabaseObject = context.Snapshot.DatabaseName,
+                    Description = "DBCC CHECKDB history could not be read. Either the check has never been run, or permissions prevented reading DBCC DBINFO output.",
+                    Impact = "Unknown. Silent database corruption may be present.",
+                    Recommendation = "Schedule regular DBCC CHECKDB runs (at minimum weekly for non-critical, daily for critical databases).",
+                    ServiceWindow = ServiceWindowAdvisor.No("Observational finding — no schema change required."),
+                },
+            ]);
+        }
+
+        var age = context.Snapshot.CapturedAtUtc - lastCheck.Value;
+
+        AuditSeverity? severity = age.TotalDays switch
+        {
+            > 30 => AuditSeverity.High,
+            > 7 => AuditSeverity.Medium,
+            _ => null,
+        };
+
+        if (severity is null)
+        {
+            return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(
+        [
+            new AuditFinding
+            {
+                Id = "MAINT-001-STALE",
+                Title = "DBCC CHECKDB has not run recently",
+                Category = Category,
+                Severity = severity.Value,
+                DatabaseObject = context.Snapshot.DatabaseName,
+                Description = $"The last known successful DBCC CHECKDB was {age.TotalDays:F0} days ago ({lastCheck.Value:yyyy-MM-dd}). Microsoft recommends running CHECKDB at least weekly.",
+                Impact = "Database corruption can go undetected until it causes data loss or service interruption.",
+                Recommendation = "Schedule a DBCC CHECKDB job. Use PHYSICAL_ONLY for daily/frequent runs; full CHECKDB weekly or on low-activity periods.",
+                ServiceWindow = ServiceWindowAdvisor.No("Observational finding — no schema change required."),
+                Evidence =
+                [
+                    new FindingEvidence("LastCheckDb", lastCheck.Value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("AgeDays", age.TotalDays.ToString("F0", CultureInfo.InvariantCulture)),
+                ],
+            },
+        ]);
+    }
+}
