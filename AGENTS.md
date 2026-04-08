@@ -7,7 +7,8 @@ Guidance for LLM/code agents contributing to this repository.
 - Name: `SqlAudit`
 - Stack: .NET 10, C#
 - Solution file: `SqlAudit.slnx`
-- Purpose: SQL Server schema/index health analysis CLI with Markdown/JSON reports and SQL fix scripts.
+- Purpose: SQL Server schema and performance health analysis CLI with Markdown/JSON reports and SQL fix scripts.
+- **Read-only by design** — SqlAudit never modifies the target database. All SQL fix scripts are written to disk for the operator to review and apply manually.
 
 ## Repository Layout
 
@@ -15,7 +16,7 @@ Guidance for LLM/code agents contributing to this repository.
 - `src/SqlAudit.SqlServer` - SQL Server snapshot collection and health checks.
 - `src/SqlAudit.Reporting` - Markdown/JSON/fix script rendering.
 - `src/SqlAudit.Cli` - command-line parsing, config resolution, runtime orchestration.
-- `tests/SqlAudit.Tests` - xUnit tests.
+- `tests/SqlAudit.Tests` - xUnit tests (xunit.v3).
 - `project-config/` - example preset config files (also embedded in CLI assembly).
 
 ## Common Commands
@@ -31,6 +32,16 @@ Guidance for LLM/code agents contributing to this repository.
 - Prefer small, focused changes over broad rewrites.
 - Add or update tests for behavior changes.
 - Keep docs (`README.md`) aligned when user-visible behavior changes.
+
+## Key Architecture Notes
+
+- **Check counts**: Quick profile = 43 checks, Deep profile = 52 checks. `AuditReport.SchemaVersion = "1.5"`.
+- **Fix script output**: individual scripts are split into `fixes/no-window/` (safe to apply without downtime) and `fixes/requires-window/` (need a maintenance window). `fixes/all-fixes.sql` is the combined bundle.
+- **Edition-aware fix scripts**: `DatabaseSnapshot.SupportsOnlineIndexOperations` is `true` for Enterprise, Developer, and Azure SQL. Fix scripts for index/table rebuilds use `ONLINE = ON` or `ONLINE = OFF` accordingly.
+- **All CLI console output** goes through `ScanOutput.cs` (Spectre.Console 0.49.1). `Program.cs` never calls `Console.*` directly.
+- **`ServiceWindow`** is required on every `AuditFinding` — forgetting it causes CS9035.
+- **`TryReadOptionalListAsync`** wraps DMV reads that may fail due to permissions; failures produce a `CollectionWarning` in the snapshot rather than aborting the scan.
+- **`ApplyExclusions`** in `SqlServerSnapshotCollector.cs` and **`ApplySuppressionResult`** / **`AttachGrowthForecasts`** in `Program.cs` must be updated whenever new snapshot/report properties are added.
 
 ## Config and Presets
 

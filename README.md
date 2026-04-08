@@ -1,31 +1,45 @@
 # SqlAudit
 
-SqlAudit is a .NET 10 CLI application for SQL Server schema and index health analysis. It scans database metadata and DMVs, reports findings in Markdown/JSON, and emits SQL remediation scripts per issue.
+SqlAudit is a .NET 10 CLI application for SQL Server schema and performance health analysis. It scans database metadata and DMVs, reports findings in Markdown/JSON, and emits SQL remediation scripts per issue.
 
 ## Engineering pedigree
 
 This project is entirely vibe coded.
 We make bold architectural choices first and let reality file bug reports later.
 
+## 🔒 Read-only — your database is never modified
+
+SqlAudit **only reads** from your SQL Server instance. It issues `SELECT` queries against system catalog views and DMVs. It never executes `INSERT`, `UPDATE`, `DELETE`, `DDL`, or any statement that modifies data or schema.
+
+The SQL fix scripts it generates are written to your local disk for you to review and run manually at a time of your choosing — the tool itself will never apply them.
+
 ## What it checks
 
-- Keys and constraints: missing PKs, large heaps, disabled/untrusted FKs, FK type mismatches, and FKs without supporting indexes
-- Index quality: duplicates, overlapping/redundant indexes, disabled indexes, write-heavy unused indexes, over-wide keys, fill factor anomalies
-- Physical health: fragmentation and low page density
-- Statistics: stale stats, `AUTO_CREATE_STATISTICS` / `AUTO_UPDATE_STATISTICS`, and `NORECOMPUTE` usage
-- Configuration: database compatibility level aligned with current server version
-- Capacity: identity exhaustion risk
-- Runtime pressure: top resource-intensive queries, wait-stat breakdown (dominant category, CPU signal-wait ratio), active blocking, and deadlock summary
-- Optimizer opportunities: Query Store regressions and guarded missing-index signals
-- Operational posture: log/VLF health, tempdb usage, file autogrowth settings, and backup recency
-- Security hygiene: orphan users, `db_owner` membership, and risky `public` grants
-- Growth trend: cross-run table growth forecasting when prior `data-model.json` exists
-- Column schema: nullable columns with no NULL values, oversized string column declarations
+SqlAudit ships **43 checks in the Quick profile** and **52 in Deep**, spanning:
+
+- **Keys and constraints** — missing PKs, large heaps, disabled/untrusted FKs, FK type mismatches, FKs without supporting indexes
+- **Index quality** — duplicates, overlapping/redundant indexes, disabled indexes, write-heavy unused indexes, over-wide keys, fill factor anomalies, columnstore opportunities
+- **Physical health** — fragmentation, low page density
+- **Statistics** — stale stats, `AUTO_CREATE_STATISTICS` / `AUTO_UPDATE_STATISTICS`, `NORECOMPUTE` usage
+- **Configuration** — compatibility level, `sp_configure` settings (max memory, MAXDOP, cost threshold), harmful trace flags
+- **Capacity** — identity exhaustion risk
+- **Runtime pressure** — top resource-intensive queries, wait-stat breakdown (dominant category, CPU signal-wait ratio), active blocking, deadlock summary
+- **Optimizer opportunities** — Query Store regressions, guarded missing-index signals
+- **Operational posture** — log/VLF health, log reuse wait, backup recency (full/differential/log), tempdb usage, file autogrowth settings
+- **Database options** — AUTO_SHRINK, AUTO_CLOSE, PAGE_VERIFY, RCSI, Query Store state
+- **Storage** — low free disk space, data and log files on the same volume
+- **Maintenance** — SQL Agent job failures (last 7 days)
+- **Memory/IO** — memory pressure indicators, file IO latency
+- **Compression** — large uncompressed tables
+- **Plan cache** — plan cache pollution indicators
+- **Security hygiene** — orphan users, `db_owner` membership, risky `public` grants
+- **Growth trend** — cross-run table growth forecasting when a prior `data-model.json` exists
+- **Column schema** — nullable columns with no NULL values, oversized string column declarations
 
 ## Profiles
 
-- `deep` (default): full analysis including fragmentation/page density/stale stats checks
-- `quick`: baseline checks focused on high-value key/index anti-patterns with lower runtime overhead
+- `deep` (default): full analysis — 52 checks including fragmentation, page density, stale stats, columnstore opportunities, and all advanced DMV-based checks
+- `quick`: 43 checks focused on high-value key/index anti-patterns and operational posture with lower runtime overhead
 
 ## Service window policy
 
@@ -200,7 +214,8 @@ The wizard also lets you pick:
 - JSON report: `audit-output/report.json`
 - Full data model JSON (optional): `audit-output/data-model.json`
 - Combined fix script: `audit-output/fixes/all-fixes.sql`
-- Per-finding scripts: `audit-output/fixes/*.sql`
+- Per-finding scripts (no service window required): `audit-output/fixes/no-window/*.sql`
+- Per-finding scripts (service window required): `audit-output/fixes/requires-window/*.sql`
 
 Each finding in the report includes severity, impact, recommendation, evidence, and service-window guidance.
 Reports also include check execution telemetry, suppression summary data, and top resource-intensive query telemetry (CPU/reads) when DMV permissions are available.
