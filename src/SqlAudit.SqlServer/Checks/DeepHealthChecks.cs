@@ -606,8 +606,9 @@ internal sealed class FragmentationCheck : IHealthCheck
 
             var rebuild = stat.FragmentationPercent >= context.Options.FragmentationRebuildThresholdPercent;
             var tableName = SqlName.Table(index.SchemaName, index.TableName);
+            var onlineOption = context.Snapshot.SupportsOnlineIndexOperations ? "ONLINE = ON" : "ONLINE = OFF";
             var command = rebuild
-                ? $"ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName} REBUILD WITH (ONLINE = ON);"
+                ? $"ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName} REBUILD WITH ({onlineOption});"
                 : $"ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName} REORGANIZE;";
 
             findings.Add(new AuditFinding
@@ -654,6 +655,7 @@ internal sealed class LowPageDensityCheck : IHealthCheck
     {
         var indexLookup = context.Snapshot.Indexes.ToDictionary(i => (i.ObjectId, i.IndexId));
         var findings = new List<AuditFinding>();
+        var onlineOption = context.Snapshot.SupportsOnlineIndexOperations ? "ONLINE = ON" : "ONLINE = OFF";
 
         foreach (var stat in context.Snapshot.IndexPhysicalStats)
         {
@@ -684,7 +686,7 @@ internal sealed class LowPageDensityCheck : IHealthCheck
                     -- RequiresServiceWindow: true
                     -- Reason: Rebuild may affect concurrency and transaction log usage.
                     ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName}
-                    REBUILD WITH (ONLINE = ON, FILLFACTOR = 90);
+                    REBUILD WITH ({onlineOption}, FILLFACTOR = 90);
                     """,
                 Evidence =
                 [
@@ -708,6 +710,7 @@ internal sealed class FillFactorAnomalyCheck : IHealthCheck
 
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
+        var onlineOption = context.Snapshot.SupportsOnlineIndexOperations ? "ONLINE = ON" : "ONLINE = OFF";
         var findings = context.Snapshot.Indexes
             .Where(i => i.FillFactor > 0 && i.FillFactor < 70 && !i.IsDisabled && !i.IsHypothetical)
             .Select(index =>
@@ -730,7 +733,7 @@ internal sealed class FillFactorAnomalyCheck : IHealthCheck
                         -- RequiresServiceWindow: true
                         -- Reason: Fill factor change requires rebuild.
                         ALTER INDEX {SqlName.Index(index.IndexName)} ON {tableName}
-                        REBUILD WITH (ONLINE = ON, FILLFACTOR = 90);
+                        REBUILD WITH ({onlineOption}, FILLFACTOR = 90);
                         """,
                     Evidence = [new FindingEvidence("FillFactor", index.FillFactor.ToString(CultureInfo.InvariantCulture))],
                 };
@@ -1256,6 +1259,7 @@ internal sealed class ColumnstoreOpportunityCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var findings = new List<AuditFinding>();
+        var onlineOption = context.Snapshot.SupportsOnlineIndexOperations ? "ONLINE = ON" : "ONLINE = OFF";
 
         var tableObjectIds = context.Snapshot.Tables
             .Where(t => t.RowCount >= context.Options.LargeTableRowThreshold)
@@ -1308,10 +1312,9 @@ internal sealed class ColumnstoreOpportunityCheck : IHealthCheck
                     "Building a columnstore index can be done ONLINE but may consume significant CPU and I/O on large tables."),
                 FixScript = $"""
                     -- TODO: Replace <column_list> with the actual columns used in analytical queries.
-                    -- Building online reduces blocking but requires Enterprise edition or SQL 2019+.
                     CREATE NONCLUSTERED COLUMNSTORE INDEX [NCCI_{SqlName.ObjectNameSuffix(table.TableName)}_Analytical]
                         ON {tableName} (<column_list>)
-                        WITH (ONLINE = ON);
+                        WITH ({onlineOption});
                     """,
                 Evidence =
                 [

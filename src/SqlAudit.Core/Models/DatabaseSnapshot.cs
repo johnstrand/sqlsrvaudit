@@ -16,6 +16,15 @@ public sealed class DatabaseSnapshot
 
     public required bool IsAzureSql { get; init; }
 
+    /// <summary>
+    /// True for Enterprise, Developer, and Azure SQL editions, which support ONLINE = ON for index and table rebuilds.
+    /// Standard and Express editions require ONLINE = OFF.
+    /// </summary>
+    public bool SupportsOnlineIndexOperations =>
+        IsAzureSql ||
+        Edition.Contains("Enterprise", StringComparison.OrdinalIgnoreCase) ||
+        Edition.Contains("Developer", StringComparison.OrdinalIgnoreCase);
+
     public required bool AutoCreateStatisticsOn { get; init; }
 
     public required bool AutoUpdateStatisticsOn { get; init; }

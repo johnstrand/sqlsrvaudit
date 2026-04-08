@@ -16,6 +16,8 @@ internal sealed class UncompressedLargeTableCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var findings = new List<AuditFinding>();
+        var supportsOnline = context.Snapshot.SupportsOnlineIndexOperations;
+        var onlineOption = supportsOnline ? "ONLINE = ON" : "ONLINE = OFF";
 
         foreach (var table in context.Snapshot.TableCompression
             .Where(t => t.DataCompression.Equals("NONE", StringComparison.OrdinalIgnoreCase)
@@ -37,12 +39,14 @@ internal sealed class UncompressedLargeTableCheck : IHealthCheck
                 Recommendation = "Test ROW compression first — it is generally safe and has minimal impact. Evaluate PAGE compression for even greater reduction (test for CPU impact first).",
                 ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
                     AuditOperationRisk.PotentiallyOnlineIndexBuild,
-                    "REBUILD with ONLINE = ON does not require downtime but does consume I/O and CPU."),
-                FixScript =$"""
+                    supportsOnline
+                        ? "REBUILD with ONLINE = ON does not require downtime but does consume I/O and CPU."
+                        : "ONLINE = ON requires Enterprise or Developer edition. Rebuild with ONLINE = OFF requires a maintenance window."),
+                FixScript = $"""
                     -- Test row compression first with an online rebuild.
-                    -- RequiresServiceWindow: false (WITH ONLINE = ON)
+                    -- RequiresServiceWindow: {(supportsOnline ? "false" : "true")}
                     ALTER TABLE {tableName}
-                    REBUILD PARTITION = ALL WITH (DATA_COMPRESSION = ROW, ONLINE = ON);
+                    REBUILD PARTITION = ALL WITH (DATA_COMPRESSION = ROW, {onlineOption});
                     """,
                 Evidence =
                 [
