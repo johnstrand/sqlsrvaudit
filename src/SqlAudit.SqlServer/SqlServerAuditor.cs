@@ -24,6 +24,8 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
                 profile,
                 excludedSchemas,
                 excludedTables,
+                collectionProgress: null,
+                checkProgress: null,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -36,9 +38,9 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         AuditProfile profile = AuditProfile.Deep,
         IReadOnlyCollection<string>? excludedSchemas = null,
         IReadOnlyCollection<string>? excludedTables = null,
-        CancellationToken cancellationToken = default,
         IProgress<CollectionProgress>? collectionProgress = null,
-        IProgress<string>? checkProgress = null)
+        IProgress<string>? checkProgress = null,
+        CancellationToken cancellationToken = default)
     {
         var snapshot = await SqlServerSnapshotCollector
             .CollectAsync(connectionString, profile, excludedSchemas, excludedTables, cancellationToken, collectionProgress)

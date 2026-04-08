@@ -29,7 +29,7 @@ internal static class InteractiveConfigWizard
             return SlugifyName(projectName) + ".sqlaudit.json";
         }
 
-        return ProjectConfigurationResolver.ResolveConfigPath(null);
+        return ProjectConfigurationResolver.ResolveConfigPath(explicitPath: null);
     }
 
     private static int RunNonInteractive(string targetPath, ConfigPreset preset, string? projectName)

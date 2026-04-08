@@ -48,8 +48,6 @@ public sealed class SqlServerChecksExecutionTests
     public async Task StatisticsConfigurationCheck_FlagsAutoOptionsAndNoRecompute()
     {
         var context = CreateContext(
-            autoCreateStatisticsOn: false,
-            autoUpdateStatisticsOn: false,
             statistics:
             [
                 new StatisticsInfo(
@@ -63,7 +61,9 @@ public sealed class SqlServerChecksExecutionTests
                     LastUpdatedUtc: null,
                     Rows: 10_000,
                     ModificationCounter: 10),
-            ]);
+            ],
+            autoCreateStatisticsOn: false,
+            autoUpdateStatisticsOn: false);
 
         var findings = await ExecuteCheckAsync("STAT-002", context);
 
@@ -458,7 +458,7 @@ public sealed class SqlServerChecksExecutionTests
         var findings = await ExecuteCheckAsync("COL-002", context);
 
         Assert.Equal(2, findings.Count);
-        Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes",       StringComparison.Ordinal) && f.Severity == AuditSeverity.Medium);
+        Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes", StringComparison.Ordinal) && f.Severity == AuditSeverity.Medium);
         Assert.Contains(findings, f => f.DatabaseObject.Contains("Description", StringComparison.Ordinal));
         Assert.DoesNotContain(findings, f => f.DatabaseObject.Contains("Code", StringComparison.Ordinal));
     }
@@ -948,7 +948,6 @@ public sealed class SqlServerChecksExecutionTests
     public async Task FailedAgentJobsCheck_FlagsRecentFailure()
     {
         var context = CreateContext(
-            capturedAtUtc: DateTimeOffset.UtcNow,
             failedAgentJobs:
             [
                 new FailedAgentJobInfo(
@@ -957,7 +956,8 @@ public sealed class SqlServerChecksExecutionTests
                     LastRunUtc: DateTimeOffset.UtcNow.AddHours(-12),
                     ErrorMessage: "The step failed because it could not obtain a lock.",
                     RunDurationSeconds: 300),
-            ]);
+            ],
+            capturedAtUtc: DateTimeOffset.UtcNow);
 
         var findings = await ExecuteCheckAsync("MAINT-002", context);
 
@@ -1003,7 +1003,7 @@ public sealed class SqlServerChecksExecutionTests
             IndexName: "PK_SalesHistory", IndexType: "CLUSTERED",
             IsUnique: true, IsPrimaryKey: true, IsUniqueConstraint: false,
             IsDisabled: false, IsHypothetical: false, FillFactor: 90,
-            KeyColumns: "[Id]", IncludedColumns: "",
+            KeyColumns: "[Id]", IncludedColumns: string.Empty,
             HasFilter: false, FilterDefinition: null,
             KeySizeBytes: 8, KeyColumnCount: 1);
         var usage = new IndexUsageInfo(

@@ -186,7 +186,7 @@ internal sealed class MaxServerMemoryCheck : IHealthCheck
 internal sealed class HarmfulTraceFlagCheck : IHealthCheck
 {
     private static readonly Dictionary<int, (string Description, AuditSeverity Severity)> HarmfulFlags =
-        new Dictionary<int, (string, AuditSeverity)>
+        new()
         {
             [1117] = ("TF 1117 causes all files in a filegroup to grow together when any single file hits autogrowth. This behavior is now the default in SQL Server 2016+ and having TF 1117 enabled on newer versions is unnecessary and may cause unexpected storage growth patterns.", AuditSeverity.Low),
             [1118] = ("TF 1118 forces uniform extent allocations for all objects, eliminating mixed extent contention. Like TF 1117, this is now the default behavior in SQL Server 2016+ (for tempdb) and is unnecessary on modern versions.", AuditSeverity.Low),
@@ -315,7 +315,7 @@ internal sealed class TempDbFileSizeEqualityCheck : IHealthCheck
                 Impact = "Uneven allocation reduces the contention benefit of having multiple TempDB files.",
                 Recommendation = "Resize all TempDB data files to be equal in size and set equal autogrowth.",
                 ServiceWindow = ServiceWindowAdvisor.No("Resizing TempDB files does not require a service window, but do this during low-activity periods."),
-                FixScript = $"-- TODO: Replace <target_size_mb> with the desired equal size.\n-- Resize all files:\nALTER DATABASE tempdb MODIFY FILE (NAME = N'tempdev', SIZE = <target_size_mb>MB);",
+                FixScript = "-- TODO: Replace <target_size_mb> with the desired equal size.\n-- Resize all files:\nALTER DATABASE tempdb MODIFY FILE (NAME = N'tempdev', SIZE = <target_size_mb>MB);",
                 Evidence = [
                     new FindingEvidence("MinFileSizeMb", minSize.ToString("F0", CultureInfo.InvariantCulture)),
                     new FindingEvidence("MaxFileSizeMb", maxSize.ToString("F0", CultureInfo.InvariantCulture)),

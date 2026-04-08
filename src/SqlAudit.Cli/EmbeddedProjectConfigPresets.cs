@@ -8,7 +8,7 @@ internal static class EmbeddedProjectConfigPresets
     private const string ResourcePrefix = "SqlAudit.Cli.ConfigPresets.";
 
     private static readonly Dictionary<string, string> ResourceFileNameByAlias =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        new(StringComparer.OrdinalIgnoreCase)
         {
             ["quick"] = "sqlaudit.quick.json",
             ["deep"] = "sqlaudit.deep.json",

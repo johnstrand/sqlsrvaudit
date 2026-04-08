@@ -1,5 +1,4 @@
 using Spectre.Console;
-using SqlAudit.Core.Execution;
 using SqlAudit.Core.Models;
 using SqlAudit.SqlServer;
 using System.Diagnostics;
@@ -103,6 +102,8 @@ internal static class ScanOutput
                 resolved.Profile,
                 resolved.ExcludeSchemas,
                 resolved.ExcludeTables,
+                collectionProgress: null,
+                checkProgress: null,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -116,9 +117,9 @@ internal static class ScanOutput
         SqlServerAuditRunResult? result = null;
 
         await AnsiConsole.Progress()
-            .AutoRefresh(true)
-            .AutoClear(false)
-            .HideCompleted(false)
+            .AutoRefresh(enabled: true)
+            .AutoClear(enabled: false)
+            .HideCompleted(enabled: false)
             .Columns(
                 new TaskDescriptionColumn(),
                 new ProgressBarColumn(),
@@ -156,9 +157,9 @@ internal static class ScanOutput
                         resolved.Profile,
                         resolved.ExcludeSchemas,
                         resolved.ExcludeTables,
-                        cancellationToken,
                         collectionProgress,
-                        checkProgress)
+                        checkProgress,
+                        cancellationToken)
                     .ConfigureAwait(false);
 
                 collectTask.Description = "[green]Database snapshot collected[/]";

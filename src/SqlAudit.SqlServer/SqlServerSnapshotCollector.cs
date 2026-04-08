@@ -267,43 +267,28 @@ public sealed class SqlServerSnapshotCollector
             AutoUpdateStatisticsOn = snapshot.AutoUpdateStatisticsOn,
             Tables = tables,
             Indexes = indexes,
-            IndexUsage = snapshot.IndexUsage
-                .Where(usage => indexKeys.Contains((usage.ObjectId, usage.IndexId)))
-                .ToArray(),
-            IndexPhysicalStats = snapshot.IndexPhysicalStats
-                .Where(stat => indexKeys.Contains((stat.ObjectId, stat.IndexId)))
-                .ToArray(),
-            ForeignKeys = snapshot.ForeignKeys
+            IndexUsage = [.. snapshot.IndexUsage.Where(usage => indexKeys.Contains((usage.ObjectId, usage.IndexId)))],
+            IndexPhysicalStats = [.. snapshot.IndexPhysicalStats.Where(stat => indexKeys.Contains((stat.ObjectId, stat.IndexId)))],
+            ForeignKeys = [.. snapshot.ForeignKeys
                 .Where(foreignKey =>
                     !IsExcludedTable(foreignKey.ParentSchema, foreignKey.ParentTable, excludedSchemaSet, excludedTableSet)
-                    && !IsExcludedTable(foreignKey.ReferencedSchema, foreignKey.ReferencedTable, excludedSchemaSet, excludedTableSet))
-                .ToArray(),
-            Statistics = snapshot.Statistics
-                .Where(stat => tableIds.Contains(stat.ObjectId))
-                .ToArray(),
-            IdentityColumns = snapshot.IdentityColumns
-                .Where(identity => tableIds.Contains(identity.ObjectId))
-                .ToArray(),
+                    && !IsExcludedTable(foreignKey.ReferencedSchema, foreignKey.ReferencedTable, excludedSchemaSet, excludedTableSet)),],
+            Statistics = [.. snapshot.Statistics.Where(stat => tableIds.Contains(stat.ObjectId))],
+            IdentityColumns = [.. snapshot.IdentityColumns.Where(identity => tableIds.Contains(identity.ObjectId))],
             TopResourceIntensiveQueries = snapshot.TopResourceIntensiveQueries,
             TopWaitStats = snapshot.TopWaitStats,
             QueryStoreRegressions = snapshot.QueryStoreRegressions,
             ActiveBlockingSessions = snapshot.ActiveBlockingSessions,
             DeadlockSummary = snapshot.DeadlockSummary,
-            MissingIndexSignals = snapshot.MissingIndexSignals
-                .Where(signal => tableIds.Contains(signal.ObjectId))
-                .ToArray(),
+            MissingIndexSignals = [.. snapshot.MissingIndexSignals.Where(signal => tableIds.Contains(signal.ObjectId))],
             LogHealth = snapshot.LogHealth,
             TempDbPressure = snapshot.TempDbPressure,
             FileGrowthHealth = snapshot.FileGrowthHealth,
             BackupPosture = snapshot.BackupPosture,
             SecurityHygieneIssues = snapshot.SecurityHygieneIssues,
             CollectionWarnings = snapshot.CollectionWarnings,
-            Columns = snapshot.Columns
-                .Where(c => tableIds.Contains(c.ObjectId))
-                .ToArray(),
-            ColumnNullStats = snapshot.ColumnNullStats
-                .Where(c => tableIds.Contains(c.ObjectId))
-                .ToArray(),
+            Columns = [.. snapshot.Columns.Where(c => tableIds.Contains(c.ObjectId))],
+            ColumnNullStats = [.. snapshot.ColumnNullStats.Where(c => tableIds.Contains(c.ObjectId))],
             ServerConfigurations = snapshot.ServerConfigurations,
             LastDbccCheckDbUtc = snapshot.LastDbccCheckDbUtc,
             TempDbConfig = snapshot.TempDbConfig,
@@ -311,9 +296,7 @@ public sealed class SqlServerSnapshotCollector
             MemoryPressure = snapshot.MemoryPressure,
             FileIoLatency = snapshot.FileIoLatency,
             PlanCache = snapshot.PlanCache,
-            TableCompression = snapshot.TableCompression
-                .Where(c => tableIds.Contains(c.ObjectId))
-                .ToArray(),
+            TableCompression = [.. snapshot.TableCompression.Where(c => tableIds.Contains(c.ObjectId))],
             DatabaseOptions = snapshot.DatabaseOptions,
             VolumeStats = snapshot.VolumeStats,
             FailedAgentJobs = snapshot.FailedAgentJobs,
@@ -1512,9 +1495,9 @@ public sealed class SqlServerSnapshotCollector
         return results;
     }
 
-    private static string EscapeBracket(string name) => name.Replace("]", "]]");
+    private static string EscapeBracket(string name) => name.Replace("]", "]]", StringComparison.Ordinal);
 
-    private static string EscapeSqlString(string value) => value.Replace("'", "''");
+    private static string EscapeSqlString(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 
     private static async Task<IReadOnlyList<SecurityHygieneIssueInfo>> ReadSecurityHygieneIssuesAsync(
         SqlConnection connection,
@@ -1720,7 +1703,7 @@ public sealed class SqlServerSnapshotCollector
             return normalized;
         }
 
-        return string.Concat(normalized.AsSpan(0, maxLength), "...");
+        return $"{normalized.AsSpan(0, maxLength)}...";
     }
 
     private static async Task<IReadOnlyList<T>> ReadListAsync<T>(
@@ -1829,7 +1812,7 @@ public sealed class SqlServerSnapshotCollector
                 CommandTimeout = 30,
             };
             var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            logicalCpuCount = result is DBNull || result is null ? 0 : Convert.ToInt32(result);
+            logicalCpuCount = result is DBNull || result is null ? 0 : Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
         }
         catch (SqlException)
         {
@@ -2122,7 +2105,7 @@ public sealed class SqlServerSnapshotCollector
                     SqlRead.String(r, "step_name"),
                     runDt,
                     SqlRead.String(r, "error_message"),
-                    hours * 3600 + minutes * 60 + seconds);
+                    (hours * 3600) + (minutes * 60) + seconds);
             },
             cancellationToken).ConfigureAwait(false);
     }

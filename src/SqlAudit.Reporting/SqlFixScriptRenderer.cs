@@ -23,9 +23,13 @@ public static class SqlFixScriptRenderer
             var script = finding.FixScript!.Trim();
 
             if (finding.ServiceWindow.RequiresServiceWindow)
+            {
                 requiresWindow[fileName] = script + Environment.NewLine;
+            }
             else
+            {
                 noWindow[fileName] = script + Environment.NewLine;
+            }
 
             combined.AppendLine($"-- Finding: {finding.Id} - {finding.Title}");
             combined.AppendLine($"-- RequiresServiceWindow: {finding.ServiceWindow.RequiresServiceWindow}");

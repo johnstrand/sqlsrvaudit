@@ -39,9 +39,7 @@ internal sealed class UncompressedLargeTableCheck : IHealthCheck
                 Recommendation = "Test ROW compression first — it is generally safe and has minimal impact. Evaluate PAGE compression for even greater reduction (test for CPU impact first).",
                 ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
                     AuditOperationRisk.PotentiallyOnlineIndexBuild,
-                    supportsOnline
-                        ? "REBUILD with ONLINE = ON does not require downtime but does consume I/O and CPU."
-                        : "ONLINE = ON requires Enterprise or Developer edition. Rebuild with ONLINE = OFF requires a maintenance window."),
+                    supportsOnline ? "REBUILD with ONLINE = ON does not require downtime but does consume I/O and CPU." : "ONLINE = ON requires Enterprise or Developer edition. Rebuild with ONLINE = OFF requires a maintenance window."),
                 FixScript = $"""
                     -- Test row compression first with an online rebuild.
                     -- RequiresServiceWindow: {(supportsOnline ? "false" : "true")}

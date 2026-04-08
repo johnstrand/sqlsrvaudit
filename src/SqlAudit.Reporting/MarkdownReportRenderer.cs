@@ -324,7 +324,7 @@ public static class MarkdownReportRenderer
         else
         {
             var deadlockLastSeen = report.DeadlockSummary.LastDeadlockUtc?.ToString("u", System.Globalization.CultureInfo.InvariantCulture) ?? "(n/a)";
-            sb.AppendLine($"- Deadlocks (24h): {report.DeadlockSummary.DeadlockCountLast24Hours}");
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"- Deadlocks (24h): {report.DeadlockSummary.DeadlockCountLast24Hours}");
             sb.AppendLine($"- Last deadlock (UTC): {EscapeInline(deadlockLastSeen)}");
         }
 
@@ -533,7 +533,7 @@ public static class MarkdownReportRenderer
                 [.. group
                     .OrderBy(finding => finding.Severity)
                     .ThenBy(finding => finding.Category, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(finding => finding.DatabaseObject, StringComparer.OrdinalIgnoreCase)]))
+                    .ThenBy(finding => finding.DatabaseObject, StringComparer.OrdinalIgnoreCase),]))
             .OrderBy(group => checkDisplayOrder.TryGetValue(group.RuleId, out var order) ? order : int.MaxValue)
             .ThenBy(group => group.Findings[0].Severity)
             .ThenBy(group => group.RuleId, StringComparer.OrdinalIgnoreCase)
@@ -618,7 +618,7 @@ public static class MarkdownReportRenderer
         var parts = candidate.Split('-', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         for (var i = 1; i < parts.Length; i++)
         {
-            if (int.TryParse(parts[i], out _))
+            if (int.TryParse(parts[i], System.Globalization.CultureInfo.InvariantCulture, out _))
             {
                 return $"{parts[i - 1]}-{parts[i]}";
             }
@@ -811,7 +811,7 @@ public static class MarkdownReportRenderer
         foreach (var s in report.SleepingTransactions.Take(15))
         {
             var queryPreview = s.LastQueryText.Length > 60
-                ? string.Concat(s.LastQueryText.AsSpan(0, 60), "...")
+                ? $"{s.LastQueryText.AsSpan(0, 60)}..."
                 : s.LastQueryText;
             sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
                 $"| {s.SessionId} | `{EscapeInline(s.LoginName)}` | `{EscapeInline(s.DatabaseName)}` | {s.OpenTransactionCount} | {s.ElapsedMinutes:F1} | `{EscapeInline(queryPreview)}` |");
@@ -880,6 +880,7 @@ public static class MarkdownReportRenderer
             {
                 warning = string.Empty;
             }
+
             sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
                 $"| `{EscapeInline(v.VolumeMount)}` | `{EscapeInline(v.LogicalName)}` | {v.FileType} | {availGb:F1} | {totalGb:F1} | {v.AvailablePercent:F1}%{warning} |");
         }
@@ -905,7 +906,7 @@ public static class MarkdownReportRenderer
         foreach (var job in report.FailedAgentJobs.Take(20))
         {
             var errPreview = job.ErrorMessage.Length > 80
-                ? string.Concat(job.ErrorMessage.AsSpan(0, 80), "…")
+                ? $"{job.ErrorMessage.AsSpan(0, 80)}…"
                 : job.ErrorMessage;
             sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
                 $"| `{EscapeInline(job.JobName)}` | `{EscapeInline(job.StepName)}` | {job.LastRunUtc:u} | {EscapeInline(errPreview)} |");

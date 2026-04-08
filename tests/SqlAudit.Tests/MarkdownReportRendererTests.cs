@@ -40,9 +40,9 @@ public sealed class MarkdownReportRendererTests
             CapturedAtUtc = DateTimeOffset.UtcNow,
             CheckExecutions =
             [
-                new CheckExecutionResult("IDX-001", "Duplicate index definitions detected", "Indexes", CheckExecutionStatus.Success, 200, 1, null),
-                new CheckExecutionResult("IDX-005", "Fragmented indexes", "Indexes", CheckExecutionStatus.Success, 150, 0, null),
-                new CheckExecutionResult("STAT-002", "Statistics configuration issues", "Statistics", CheckExecutionStatus.Success, 100, 1, null),
+                new CheckExecutionResult("IDX-001", "Duplicate index definitions detected", "Indexes", CheckExecutionStatus.Success, 200, 1, ErrorMessage: null),
+                new CheckExecutionResult("IDX-005", "Fragmented indexes", "Indexes", CheckExecutionStatus.Success, 150, 0, ErrorMessage: null),
+                new CheckExecutionResult("STAT-002", "Statistics configuration issues", "Statistics", CheckExecutionStatus.Success, 100, 1, ErrorMessage: null),
             ],
             Findings =
             [
@@ -140,9 +140,9 @@ public sealed class MarkdownReportRendererTests
             ],
             QueryStoreRegressions =
             [
-                new QueryStoreRegressionInfo(11, 20.0m, 50.0m, 2.5m, 100, null, "SELECT 1"),
+                new QueryStoreRegressionInfo(11, 20.0m, 50.0m, 2.5m, 100, LastExecutionUtc: null, "SELECT 1"),
             ],
-            DeadlockSummary = new DeadlockSummaryInfo(2, null),
+            DeadlockSummary = new DeadlockSummaryInfo(2, LastDeadlockUtc: null),
             ActiveBlockingSessions =
             [
                 new BlockingSessionInfo(55, 56, "LCK_M_S", 9000, "KEY", "SELECT * FROM dbo.T"),
@@ -155,9 +155,9 @@ public sealed class MarkdownReportRendererTests
             TempDbPressure = new TempDbPressureInfo(256m, 128m, 64m, 512m),
             FileGrowthHealth =
             [
-                new FileGrowthHealthInfo(1, "DbA", "ROWS", "C:\\Data\\DbA.mdf", 1024m, false, 64m, null, "64 MB", "Growth setting looks reasonable."),
+                new FileGrowthHealthInfo(1, "DbA", "ROWS", "C:\\Data\\DbA.mdf", 1024m, IsPercentGrowth: false, 64m, MaxSizeMb: null, "64 MB", "Growth setting looks reasonable."),
             ],
-            BackupPosture = new BackupPostureInfo("FULL", null, null, null, 12m, 4m, 1m),
+            BackupPosture = new BackupPostureInfo("FULL", LastFullBackupUtc: null, LastDifferentialBackupUtc: null, LastLogBackupUtc: null, 12m, 4m, 1m),
             SecurityHygieneIssues =
             [
                 new SecurityHygieneIssueInfo("DbOwnerMembership", AuditSeverity.Medium, "legacy_user", "Principal is member of db_owner role."),
