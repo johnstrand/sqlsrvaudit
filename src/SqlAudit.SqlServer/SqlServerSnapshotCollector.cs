@@ -335,7 +335,7 @@ public sealed class SqlServerSnapshotCollector
         IReadOnlySet<string>? excludedSchemaSet,
         IReadOnlySet<string>? excludedTableSet)
     {
-        return (excludedSchemaSet is not null && excludedSchemaSet.Contains(schemaName))
+        return (excludedSchemaSet?.Contains(schemaName) == true)
                || (excludedTableSet is not null
                    && (excludedTableSet.Contains(tableName)
                        || excludedTableSet.Contains($"{schemaName}.{tableName}")));
@@ -1659,7 +1659,7 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<T>> TryReadOptionalListAsync<T>(
         Func<Task<IReadOnlyList<T>>> read,
-        ICollection<CollectionWarning> warnings,
+        List<CollectionWarning> warnings,
         string section)
     {
         try

@@ -185,7 +185,7 @@ internal sealed class MaxServerMemoryCheck : IHealthCheck
 
 internal sealed class HarmfulTraceFlagCheck : IHealthCheck
 {
-    private static readonly IReadOnlyDictionary<int, (string Description, AuditSeverity Severity)> HarmfulFlags =
+    private static readonly Dictionary<int, (string Description, AuditSeverity Severity)> HarmfulFlags =
         new Dictionary<int, (string, AuditSeverity)>
         {
             [1117] = ("TF 1117 causes all files in a filegroup to grow together when any single file hits autogrowth. This behavior is now the default in SQL Server 2016+ and having TF 1117 enabled on newer versions is unnecessary and may cause unexpected storage growth patterns.", AuditSeverity.Low),
@@ -208,15 +208,15 @@ internal sealed class HarmfulTraceFlagCheck : IHealthCheck
             .Where(f => f.IsGlobal && HarmfulFlags.ContainsKey(f.TraceFlag))
             .Select(flag =>
             {
-                var info = HarmfulFlags[flag.TraceFlag];
+                var (description, severity) = HarmfulFlags[flag.TraceFlag];
                 return new AuditFinding
                 {
                     Id = $"CFG-006-TF{flag.TraceFlag}",
                     Title = $"Potentially harmful global trace flag TF {flag.TraceFlag} is enabled",
                     Category = Category,
-                    Severity = info.Severity,
+                    Severity = severity,
                     DatabaseObject = "server",
-                    Description = info.Description,
+                    Description = description,
                     Impact = "Global trace flags affect all databases and connections on the instance. Incorrect or outdated trace flags can cause unexpected behavior, degraded performance, or hidden errors.",
                     Recommendation = $"Review whether trace flag {flag.TraceFlag} is still needed. If it was applied as a workaround, verify the underlying issue is resolved and disable it.",
                     ServiceWindow = ServiceWindowAdvisor.No("DBCC TRACEOFF takes effect immediately; no service window required."),
@@ -316,8 +316,7 @@ internal sealed class TempDbFileSizeEqualityCheck : IHealthCheck
                 Recommendation = "Resize all TempDB data files to be equal in size and set equal autogrowth.",
                 ServiceWindow = ServiceWindowAdvisor.No("Resizing TempDB files does not require a service window, but do this during low-activity periods."),
                 FixScript = $"-- TODO: Replace <target_size_mb> with the desired equal size.\n-- Resize all files:\nALTER DATABASE tempdb MODIFY FILE (NAME = N'tempdev', SIZE = <target_size_mb>MB);",
-                Evidence =
-                [
+                Evidence = [
                     new FindingEvidence("MinFileSizeMb", minSize.ToString("F0", CultureInfo.InvariantCulture)),
                     new FindingEvidence("MaxFileSizeMb", maxSize.ToString("F0", CultureInfo.InvariantCulture)),
                     new FindingEvidence("FileCount", cfg.DataFileSizesMb.Count.ToString(CultureInfo.InvariantCulture)),

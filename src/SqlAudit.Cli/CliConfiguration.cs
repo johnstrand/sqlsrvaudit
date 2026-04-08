@@ -950,17 +950,17 @@ internal static class ProjectConfigurationResolver
             $"Invalid check id(s) for profile '{profile}': {string.Join(", ", invalid)}.");
     }
 
-    private static IReadOnlyList<string>? NormalizeSchemaList(IReadOnlyList<string>? schemas)
+    private static string[]? NormalizeSchemaList(IReadOnlyList<string>? schemas)
     {
         return NormalizeStringList(schemas);
     }
 
-    private static IReadOnlyList<string>? NormalizeTableList(IReadOnlyList<string>? tables)
+    private static string[]? NormalizeTableList(IReadOnlyList<string>? tables)
     {
         return NormalizeStringList(tables);
     }
 
-    private static IReadOnlyList<string>? NormalizeStringList(IReadOnlyList<string>? values)
+    private static string[]? NormalizeStringList(IReadOnlyList<string>? values)
     {
         if (values is null || values.Count == 0)
         {

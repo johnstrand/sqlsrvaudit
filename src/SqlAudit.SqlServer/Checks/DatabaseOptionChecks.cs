@@ -15,7 +15,7 @@ internal sealed class AutoShrinkCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var opts = context.Snapshot.DatabaseOptions;
-        if (opts is null || !opts.AutoShrink)
+        if (opts?.AutoShrink != true)
         {
             return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
         }
@@ -54,7 +54,7 @@ internal sealed class AutoCloseCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var opts = context.Snapshot.DatabaseOptions;
-        if (opts is null || !opts.AutoClose)
+        if (opts?.AutoClose != true)
         {
             return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
         }
@@ -138,7 +138,7 @@ internal sealed class RcsiAdvisoryCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var opts = context.Snapshot.DatabaseOptions;
-        if (opts is null || opts.IsRcsiEnabled)
+        if (opts?.IsRcsiEnabled != false)
         {
             return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
         }
@@ -187,7 +187,7 @@ internal sealed class QueryStoreDisabledCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var opts = context.Snapshot.DatabaseOptions;
-        if (opts is null || opts.QueryStoreEnabled)
+        if (opts?.QueryStoreEnabled != false)
         {
             return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
         }
@@ -241,7 +241,7 @@ internal sealed class QueryStoreReadOnlyCheck : IHealthCheck
     public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
     {
         var opts = context.Snapshot.DatabaseOptions;
-        if (opts is null || !opts.QueryStoreEnabled)
+        if (opts?.QueryStoreEnabled != true)
         {
             return Task.FromResult<IReadOnlyCollection<AuditFinding>>([]);
         }
