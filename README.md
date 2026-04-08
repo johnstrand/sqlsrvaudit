@@ -15,11 +15,12 @@ We make bold architectural choices first and let reality file bug reports later.
 - Statistics: stale stats, `AUTO_CREATE_STATISTICS` / `AUTO_UPDATE_STATISTICS`, and `NORECOMPUTE` usage
 - Configuration: database compatibility level aligned with current server version
 - Capacity: identity exhaustion risk
-- Runtime pressure: top resource-intensive queries, wait-stat breakdown, active blocking, and deadlock summary
+- Runtime pressure: top resource-intensive queries, wait-stat breakdown (dominant category, CPU signal-wait ratio), active blocking, and deadlock summary
 - Optimizer opportunities: Query Store regressions and guarded missing-index signals
 - Operational posture: log/VLF health, tempdb usage, file autogrowth settings, and backup recency
 - Security hygiene: orphan users, `db_owner` membership, and risky `public` grants
 - Growth trend: cross-run table growth forecasting when prior `data-model.json` exists
+- Column schema: nullable columns with no NULL values, oversized string column declarations
 
 ## Profiles
 
@@ -169,16 +170,22 @@ dotnet run --project src/SqlAudit.Cli -- init-config
 Create config non-interactively (CI/bootstrap):
 
 ```bash
-dotnet run --project src/SqlAudit.Cli -- init-config --non-interactive --preset deep-strict --config "sqlaudit.project.json"
+dotnet run --project src/SqlAudit.Cli -- init-config --non-interactive --preset deep-strict --name my-project
 ```
 
-Custom output path:
+Custom output path (overrides name-based file derivation):
 
 ```bash
 dotnet run --project src/SqlAudit.Cli -- init-config --config "my-team.sqlaudit.json"
 ```
 
-The wizard lets you pick:
+The wizard first asks for a **project name**. The name is slugified and used to
+name the output file — for example, a project named `"My App"` produces
+`my-app.sqlaudit.json`. Pass `--name <value>` to supply the name without being
+prompted. If `--config` is given explicitly it takes precedence over the
+name-derived path.
+
+The wizard also lets you pick:
 
 - profile (`quick` or `deep`)
 - output format (`markdown`, `json`, `both`)
