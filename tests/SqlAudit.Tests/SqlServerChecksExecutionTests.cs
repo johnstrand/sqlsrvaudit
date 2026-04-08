@@ -304,9 +304,16 @@ public sealed class SqlServerChecksExecutionTests
         IReadOnlyList<SleepingTransactionInfo>? sleepingTransactions = null,
         IReadOnlyList<FileIoLatencyInfo>? fileIoLatency = null,
         IReadOnlyList<TableCompressionInfo>? tableCompression = null,
+        IReadOnlyList<BlockingSessionInfo>? blockingSessions = null,
+        IReadOnlyList<VolumeInfo>? volumeStats = null,
+        IReadOnlyList<FailedAgentJobInfo>? failedAgentJobs = null,
+        IReadOnlyList<GlobalTraceFlagInfo>? globalTraceFlags = null,
         TempDbConfigInfo? tempDbConfig = null,
         MemoryPressureInfo? memoryPressure = null,
         PlanCacheInfo? planCache = null,
+        BackupPostureInfo? backupPosture = null,
+        LogHealthInfo? logHealth = null,
+        DatabaseOptionsInfo? databaseOptions = null,
         DateTimeOffset? lastDbccCheckDbUtc = null,
         DateTimeOffset? capturedAtUtc = null,
         bool autoCreateStatisticsOn = true,
@@ -341,9 +348,16 @@ public sealed class SqlServerChecksExecutionTests
                 SleepingTransactions = sleepingTransactions ?? [],
                 FileIoLatency = fileIoLatency ?? [],
                 TableCompression = tableCompression ?? [],
+                ActiveBlockingSessions = blockingSessions ?? [],
+                VolumeStats = volumeStats ?? [],
+                FailedAgentJobs = failedAgentJobs ?? [],
+                GlobalTraceFlags = globalTraceFlags ?? [],
                 TempDbConfig = tempDbConfig,
                 MemoryPressure = memoryPressure,
                 PlanCache = planCache,
+                BackupPosture = backupPosture,
+                LogHealth = logHealth,
+                DatabaseOptions = databaseOptions,
                 LastDbccCheckDbUtc = lastDbccCheckDbUtc,
                 CapturedAtUtc = capturedAtUtc ?? DateTimeOffset.UtcNow,
             },
@@ -733,6 +747,278 @@ public sealed class SqlServerChecksExecutionTests
         var finding = Assert.Single(findings);
         Assert.Equal(AuditSeverity.Info, finding.Severity);
         Assert.Contains("REBUILD", finding.FixScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HighVlfCountCheck_FlagsHighVlfCount()
+    {
+        var context = CreateContext(logHealth: new LogHealthInfo(
+            TotalLogSizeMb: 1024m, UsedLogSizeMb: 200m, UsedLogPercent: 19.5m,
+            VlfCount: 1500, LongestActiveTransactionMinutes: 0, LogReuseWaitDescription: "NOTHING"));
+
+        var findings = await ExecuteCheckAsync("LOG-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("1500", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HighVlfCountCheck_NoFindingWhenVlfCountOk()
+    {
+        var context = CreateContext(logHealth: new LogHealthInfo(
+            TotalLogSizeMb: 512m, UsedLogSizeMb: 50m, UsedLogPercent: 9.8m,
+            VlfCount: 50, LongestActiveTransactionMinutes: 0, LogReuseWaitDescription: "NOTHING"));
+
+        var findings = await ExecuteCheckAsync("LOG-001", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task LogReuseWaitCheck_FlagsActiveTransaction()
+    {
+        var context = CreateContext(logHealth: new LogHealthInfo(
+            TotalLogSizeMb: 512m, UsedLogSizeMb: 500m, UsedLogPercent: 97.7m,
+            VlfCount: 100, LongestActiveTransactionMinutes: 60, LogReuseWaitDescription: "ACTIVE_TRANSACTION"));
+
+        var findings = await ExecuteCheckAsync("LOG-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("ACTIVE_TRANSACTION", finding.Id, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task LogReuseWaitCheck_NoFindingForLogBackup()
+    {
+        var context = CreateContext(logHealth: new LogHealthInfo(
+            TotalLogSizeMb: 512m, UsedLogSizeMb: 200m, UsedLogPercent: 39.1m,
+            VlfCount: 100, LongestActiveTransactionMinutes: 0, LogReuseWaitDescription: "LOG_BACKUP"));
+
+        var findings = await ExecuteCheckAsync("LOG-002", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task FullBackupRecencyCheck_FlagsNeverBackedUp()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: null,
+            LastDifferentialBackupUtc: null,
+            LastLogBackupUtc: null,
+            FullBackupAgeHours: null,
+            DifferentialBackupAgeHours: null,
+            LogBackupAgeHours: null));
+
+        var findings = await ExecuteCheckAsync("BAK-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Critical, finding.Severity);
+    }
+
+    [Fact]
+    public async Task FullBackupRecencyCheck_NoFindingForRecentBackup()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddHours(-24),
+            LastDifferentialBackupUtc: null,
+            LastLogBackupUtc: DateTimeOffset.UtcNow.AddMinutes(-30),
+            FullBackupAgeHours: 24m,
+            DifferentialBackupAgeHours: null,
+            LogBackupAgeHours: 0.5m));
+
+        var findings = await ExecuteCheckAsync("BAK-001", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task LogBackupForFullRecoveryCheck_FlagsNoLogBackups()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddDays(-1),
+            LastDifferentialBackupUtc: null,
+            LastLogBackupUtc: null,
+            FullBackupAgeHours: 24m,
+            DifferentialBackupAgeHours: null,
+            LogBackupAgeHours: null));
+
+        var findings = await ExecuteCheckAsync("BAK-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Critical, finding.Severity);
+    }
+
+    [Fact]
+    public async Task LogBackupForFullRecoveryCheck_NoFindingForSimpleRecovery()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "SIMPLE",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddDays(-1),
+            LastDifferentialBackupUtc: null,
+            LastLogBackupUtc: null,
+            FullBackupAgeHours: 24m,
+            DifferentialBackupAgeHours: null,
+            LogBackupAgeHours: null));
+
+        var findings = await ExecuteCheckAsync("BAK-002", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task AutoShrinkCheck_FlagsAutoShrinkEnabled()
+    {
+        var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
+            AutoShrink: true, AutoClose: false,
+            PageVerify: "CHECKSUM", IsRcsiEnabled: true,
+            QueryStoreEnabled: true, QueryStoreState: "READ_WRITE"));
+
+        var findings = await ExecuteCheckAsync("DB-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("AUTO_SHRINK OFF", finding.FixScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PageVerifyCheck_FlagsNonChecksum()
+    {
+        var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
+            AutoShrink: false, AutoClose: false,
+            PageVerify: "TORN_PAGE_DETECTION", IsRcsiEnabled: true,
+            QueryStoreEnabled: true, QueryStoreState: "READ_WRITE"));
+
+        var findings = await ExecuteCheckAsync("DB-003", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("CHECKSUM", finding.FixScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task QueryStoreReadOnlyCheck_FlagsReadOnlyState()
+    {
+        var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
+            AutoShrink: false, AutoClose: false,
+            PageVerify: "CHECKSUM", IsRcsiEnabled: true,
+            QueryStoreEnabled: true, QueryStoreState: "READ_ONLY"));
+
+        var findings = await ExecuteCheckAsync("DB-006", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+    }
+
+    [Fact]
+    public async Task LowDiskSpaceCheck_FlagsLowAvailableSpace()
+    {
+        var context = CreateContext(volumeStats:
+        [
+            new VolumeInfo(VolumeMount: "D:\\", TotalBytes: 100L * 1024 * 1024 * 1024, AvailableBytes: 3L * 1024 * 1024 * 1024, AvailablePercent: 3m, LogicalName: "mydb_data", FileType: "ROWS"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("STOR-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task DataAndLogOnSameVolumeCheck_FlagsMixedVolume()
+    {
+        var context = CreateContext(volumeStats:
+        [
+            new VolumeInfo(VolumeMount: "D:\\", TotalBytes: 100L * 1024 * 1024 * 1024, AvailableBytes: 50L * 1024 * 1024 * 1024, AvailablePercent: 50m, LogicalName: "mydb_data", FileType: "ROWS"),
+            new VolumeInfo(VolumeMount: "D:\\", TotalBytes: 100L * 1024 * 1024 * 1024, AvailableBytes: 50L * 1024 * 1024 * 1024, AvailablePercent: 50m, LogicalName: "mydb_log", FileType: "LOG"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("STOR-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Low, finding.Severity);
+    }
+
+    [Fact]
+    public async Task FailedAgentJobsCheck_FlagsRecentFailure()
+    {
+        var context = CreateContext(
+            capturedAtUtc: DateTimeOffset.UtcNow,
+            failedAgentJobs:
+            [
+                new FailedAgentJobInfo(
+                    JobName: "Weekly Index Rebuild",
+                    StepName: "Rebuild Indexes",
+                    LastRunUtc: DateTimeOffset.UtcNow.AddHours(-12),
+                    ErrorMessage: "The step failed because it could not obtain a lock.",
+                    RunDurationSeconds: 300),
+            ]);
+
+        var findings = await ExecuteCheckAsync("MAINT-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Contains("Weekly Index Rebuild", finding.Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HarmfulTraceFlagCheck_FlagsKnownHarmfulFlag()
+    {
+        var context = CreateContext(globalTraceFlags:
+        [
+            new GlobalTraceFlagInfo(TraceFlag: 3625, IsGlobal: true),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-006", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+        Assert.Contains("3625", finding.Id, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HarmfulTraceFlagCheck_NoFindingForSafeFlag()
+    {
+        var context = CreateContext(globalTraceFlags:
+        [
+            new GlobalTraceFlagInfo(TraceFlag: 1222, IsGlobal: true),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CFG-006", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task ColumnstoreOpportunityCheck_FlagsScanHeavyLargeTable()
+    {
+        var table = new TableInfo(1, "dbo", "SalesHistory", 1_000_000, 2048m, HasPrimaryKey: true, IsHeap: false);
+        var clusteredIndex = new IndexInfo(
+            ObjectId: 1, IndexId: 1, SchemaName: "dbo", TableName: "SalesHistory",
+            IndexName: "PK_SalesHistory", IndexType: "CLUSTERED",
+            IsUnique: true, IsPrimaryKey: true, IsUniqueConstraint: false,
+            IsDisabled: false, IsHypothetical: false, FillFactor: 90,
+            KeyColumns: "[Id]", IncludedColumns: "",
+            HasFilter: false, FilterDefinition: null,
+            KeySizeBytes: 8, KeyColumnCount: 1);
+        var usage = new IndexUsageInfo(
+            ObjectId: 1, IndexId: 1, UserSeeks: 100, UserScans: 5000, UserLookups: 0, UserUpdates: 200, LastReadUtc: null);
+
+        var context = CreateContext(
+            tables: [table],
+            indexes: [clusteredIndex],
+            usage: [usage]);
+
+        var findings = await ExecuteCheckAsync("IDX-011", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Info, finding.Severity);
+        Assert.Contains("COLUMNSTORE", finding.FixScript, StringComparison.Ordinal);
     }
 
     private static IndexInfo CreateIndex(

@@ -77,6 +77,14 @@ public sealed class DatabaseSnapshot
     public PlanCacheInfo? PlanCache { get; init; }
 
     public IReadOnlyList<TableCompressionInfo> TableCompression { get; init; } = [];
+
+    public DatabaseOptionsInfo? DatabaseOptions { get; init; }
+
+    public IReadOnlyList<VolumeInfo> VolumeStats { get; init; } = [];
+
+    public IReadOnlyList<FailedAgentJobInfo> FailedAgentJobs { get; init; } = [];
+
+    public IReadOnlyList<GlobalTraceFlagInfo> GlobalTraceFlags { get; init; } = [];
 }
 
 public sealed record TableInfo(
@@ -334,3 +342,28 @@ public sealed record TableCompressionInfo(
     string DataCompression,
     long Rows,
     long UsedPageCount);
+
+public sealed record DatabaseOptionsInfo(
+    bool AutoShrink,
+    bool AutoClose,
+    string PageVerify,
+    bool IsRcsiEnabled,
+    bool QueryStoreEnabled,
+    string QueryStoreState);
+
+public sealed record VolumeInfo(
+    string VolumeMount,
+    long TotalBytes,
+    long AvailableBytes,
+    decimal AvailablePercent,
+    string LogicalName,
+    string FileType);
+
+public sealed record FailedAgentJobInfo(
+    string JobName,
+    string StepName,
+    DateTimeOffset LastRunUtc,
+    string ErrorMessage,
+    int RunDurationSeconds);
+
+public sealed record GlobalTraceFlagInfo(int TraceFlag, bool IsGlobal);

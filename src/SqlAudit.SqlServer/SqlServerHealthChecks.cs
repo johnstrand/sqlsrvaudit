@@ -44,6 +44,22 @@ public static class SqlServerHealthChecks
         new("IO-002", QuickEnabled: true, DeepEnabled: true, () => new LogFileWriteLatencyCheck()),
         new("CACHE-001", QuickEnabled: true, DeepEnabled: true, () => new SingleUsePlanRatioCheck()),
         new("COMP-001", QuickEnabled: false, DeepEnabled: true, () => new UncompressedLargeTableCheck()),
+        new("LOG-001", QuickEnabled: true, DeepEnabled: true, () => new HighVlfCountCheck()),
+        new("LOG-002", QuickEnabled: true, DeepEnabled: true, () => new LogReuseWaitCheck()),
+        new("BAK-001", QuickEnabled: true, DeepEnabled: true, () => new FullBackupRecencyCheck()),
+        new("BAK-002", QuickEnabled: true, DeepEnabled: true, () => new LogBackupForFullRecoveryCheck()),
+        new("BAK-003", QuickEnabled: true, DeepEnabled: true, () => new DifferentialBackupGapCheck()),
+        new("DB-001", QuickEnabled: true, DeepEnabled: true, () => new AutoShrinkCheck()),
+        new("DB-002", QuickEnabled: true, DeepEnabled: true, () => new AutoCloseCheck()),
+        new("DB-003", QuickEnabled: true, DeepEnabled: true, () => new PageVerifyCheck()),
+        new("DB-004", QuickEnabled: true, DeepEnabled: true, () => new RcsiAdvisoryCheck()),
+        new("DB-005", QuickEnabled: true, DeepEnabled: true, () => new QueryStoreDisabledCheck()),
+        new("DB-006", QuickEnabled: true, DeepEnabled: true, () => new QueryStoreReadOnlyCheck()),
+        new("STOR-001", QuickEnabled: true, DeepEnabled: true, () => new LowDiskSpaceCheck()),
+        new("STOR-002", QuickEnabled: true, DeepEnabled: true, () => new DataAndLogOnSameVolumeCheck()),
+        new("IDX-011", QuickEnabled: false, DeepEnabled: true, () => new ColumnstoreOpportunityCheck()),
+        new("MAINT-002", QuickEnabled: true, DeepEnabled: true, () => new FailedAgentJobsCheck()),
+        new("CFG-006", QuickEnabled: true, DeepEnabled: true, () => new HarmfulTraceFlagCheck()),
     ];
 
     public static IReadOnlyCollection<IHealthCheck> Create(

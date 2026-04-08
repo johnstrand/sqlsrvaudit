@@ -14,7 +14,7 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken,
         IProgress<CollectionProgress>? progress = null)
     {
-        var totalSteps = profile == AuditProfile.Deep ? 29 : 25;
+        var totalSteps = profile == AuditProfile.Deep ? 33 : 29;
         var completed = 0;
 
         void Report(string stepName)
@@ -151,6 +151,26 @@ public sealed class SqlServerSnapshotCollector
                 "Table Compression").ConfigureAwait(false)
             : (IReadOnlyList<TableCompressionInfo>)[];
 
+        Report("Database options");
+        var databaseOptions = await TryReadOptionalAsync(
+            () => ReadDatabaseOptionsAsync(connection, cancellationToken)).ConfigureAwait(false);
+
+        Report("Volume stats");
+        var volumeStats = await TryReadOptionalListAsync(
+            () => ReadVolumeStatsAsync(connection, cancellationToken),
+            warnings,
+            "Volume Stats").ConfigureAwait(false);
+
+        Report("SQL Agent job failures");
+        var failedAgentJobs = await TryReadOptionalListAsync(
+            () => ReadFailedAgentJobsAsync(connection, cancellationToken),
+            warnings,
+            "SQL Agent Jobs").ConfigureAwait(false);
+
+        Report("Global trace flags");
+        var globalTraceFlags = await TryReadOptionalListAsync(
+            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken)).ConfigureAwait(false);
+
         var snapshot = new DatabaseSnapshot
         {
             CapturedAtUtc = DateTimeOffset.UtcNow,
@@ -191,6 +211,10 @@ public sealed class SqlServerSnapshotCollector
             FileIoLatency = fileIoLatency,
             PlanCache = planCache,
             TableCompression = tableCompression,
+            DatabaseOptions = databaseOptions,
+            VolumeStats = volumeStats,
+            FailedAgentJobs = failedAgentJobs,
+            GlobalTraceFlags = globalTraceFlags,
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
@@ -290,6 +314,10 @@ public sealed class SqlServerSnapshotCollector
             TableCompression = snapshot.TableCompression
                 .Where(c => tableIds.Contains(c.ObjectId))
                 .ToArray(),
+            DatabaseOptions = snapshot.DatabaseOptions,
+            VolumeStats = snapshot.VolumeStats,
+            FailedAgentJobs = snapshot.FailedAgentJobs,
+            GlobalTraceFlags = snapshot.GlobalTraceFlags,
         };
     }
 
@@ -1992,6 +2020,124 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.String(r, "data_compression_desc"),
                 SqlRead.Long(r, "rows"),
                 SqlRead.Long(r, "used_page_count")),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<DatabaseOptionsInfo?> ReadDatabaseOptionsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                is_auto_shrink_on,
+                is_auto_close_on,
+                page_verify_option_desc,
+                is_read_committed_snapshot_on,
+                is_query_store_on,
+                COALESCE(query_store_state_desc, N'OFF') AS query_store_state_desc
+            FROM sys.databases
+            WHERE database_id = DB_ID()
+            """;
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30,
+        };
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new DatabaseOptionsInfo(
+                SqlRead.Bool(reader, "is_auto_shrink_on"),
+                SqlRead.Bool(reader, "is_auto_close_on"),
+                SqlRead.String(reader, "page_verify_option_desc"),
+                SqlRead.Bool(reader, "is_read_committed_snapshot_on"),
+                SqlRead.Bool(reader, "is_query_store_on"),
+                SqlRead.String(reader, "query_store_state_desc"));
+        }
+
+        return null;
+    }
+
+    private static async Task<IReadOnlyList<VolumeInfo>> ReadVolumeStatsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                vs.volume_mount_point,
+                vs.total_bytes,
+                vs.available_bytes,
+                CAST(vs.available_bytes * 100.0 / NULLIF(vs.total_bytes, 0) AS DECIMAL(5,1)) AS available_pct,
+                mf.name AS logical_name,
+                CASE mf.type WHEN 0 THEN 'ROWS' WHEN 1 THEN 'LOG' ELSE 'OTHER' END AS file_type
+            FROM sys.database_files AS mf
+            CROSS APPLY sys.dm_os_volume_stats(DB_ID(), mf.file_id) AS vs
+            """;
+        return await ReadListAsync(
+            connection,
+            sql,
+            r => new VolumeInfo(
+                SqlRead.String(r, "volume_mount_point"),
+                SqlRead.Long(r, "total_bytes"),
+                SqlRead.Long(r, "available_bytes"),
+                SqlRead.Decimal(r, "available_pct"),
+                SqlRead.String(r, "logical_name"),
+                SqlRead.String(r, "file_type")),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<FailedAgentJobInfo>> ReadFailedAgentJobsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP 50
+                j.name AS job_name,
+                js.step_name,
+                CONVERT(datetime,
+                    CONVERT(char(8), h.run_date, 112) + ' '
+                    + STUFF(STUFF(RIGHT('000000' + CONVERT(varchar, h.run_time), 6), 5, 0, ':'), 3, 0, ':')
+                ) AS last_run_datetime,
+                ISNULL(NULLIF(h.message, ''), 'No error message recorded') AS error_message,
+                h.run_duration
+            FROM msdb.dbo.sysjobhistory AS h
+            INNER JOIN msdb.dbo.sysjobs AS j ON j.job_id = h.job_id
+            INNER JOIN msdb.dbo.sysjobsteps AS js ON js.job_id = h.job_id AND js.step_id = h.step_id
+            WHERE h.run_status = 0
+              AND h.run_date >= CONVERT(int, CONVERT(char(8), DATEADD(day, -7, GETDATE()), 112))
+            ORDER BY h.run_date DESC, h.run_time DESC
+            """;
+        return await ReadListAsync(
+            connection,
+            sql,
+            r =>
+            {
+                var runDt = SqlRead.NullableDateTimeOffset(r, "last_run_datetime")
+                    ?? DateTimeOffset.MinValue;
+                var rawDuration = SqlRead.Int(r, "run_duration");
+                var hours = rawDuration / 10000;
+                var minutes = (rawDuration % 10000) / 100;
+                var seconds = rawDuration % 100;
+                return new FailedAgentJobInfo(
+                    SqlRead.String(r, "job_name"),
+                    SqlRead.String(r, "step_name"),
+                    runDt,
+                    SqlRead.String(r, "error_message"),
+                    hours * 3600 + minutes * 60 + seconds);
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<GlobalTraceFlagInfo>> ReadGlobalTraceFlagsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = "DBCC TRACESTATUS(-1) WITH NO_INFOMSGS";
+        return await ReadListAsync(
+            connection,
+            sql,
+            r => new GlobalTraceFlagInfo(
+                SqlRead.Int(r, "TraceFlag"),
+                SqlRead.Bool(r, "Global")),
             cancellationToken).ConfigureAwait(false);
     }
 }

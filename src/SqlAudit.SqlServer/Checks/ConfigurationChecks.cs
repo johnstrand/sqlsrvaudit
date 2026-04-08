@@ -183,6 +183,57 @@ internal sealed class MaxServerMemoryCheck : IHealthCheck
     }
 }
 
+internal sealed class HarmfulTraceFlagCheck : IHealthCheck
+{
+    private static readonly IReadOnlyDictionary<int, (string Description, AuditSeverity Severity)> HarmfulFlags =
+        new Dictionary<int, (string, AuditSeverity)>
+        {
+            [1117] = ("TF 1117 causes all files in a filegroup to grow together when any single file hits autogrowth. This behavior is now the default in SQL Server 2016+ and having TF 1117 enabled on newer versions is unnecessary and may cause unexpected storage growth patterns.", AuditSeverity.Low),
+            [1118] = ("TF 1118 forces uniform extent allocations for all objects, eliminating mixed extent contention. Like TF 1117, this is now the default behavior in SQL Server 2016+ (for tempdb) and is unnecessary on modern versions.", AuditSeverity.Low),
+            [3625] = ("TF 3625 masks system error messages shown to non-sysadmin users with a generic '%%' message. While this can hide internal details from end users, it also makes debugging production errors harder and can hide security-relevant information from DBAs.", AuditSeverity.Medium),
+            [8744] = ("TF 8744 disables pre-fetching for nested loop operators. This was a workaround for a specific bug and should not be active in production unless directed by Microsoft Support for a known issue.", AuditSeverity.Medium),
+            [9481] = ("TF 9481 forces the legacy cardinality estimator (CE70) for all queries. This is a broad blunt instrument — it prevents the query optimizer from using improved CE models and should not be applied globally; use query-level hints or database-scoped configuration instead.", AuditSeverity.Medium),
+            [4199] = ("TF 4199 enables query optimizer hotfixes. While usually beneficial, applying it globally via trace flag (rather than database-scoped QUERY_OPTIMIZER_HOTFIXES=ON) means it cannot be selectively disabled per database, which can cause unexpected plan changes across all databases.", AuditSeverity.Low),
+        };
+
+    public string Id => "CFG-006";
+
+    public string Title => "Potentially harmful global trace flags are enabled";
+
+    public string Category => "Configuration";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        var findings = context.Snapshot.GlobalTraceFlags
+            .Where(f => f.IsGlobal && HarmfulFlags.ContainsKey(f.TraceFlag))
+            .Select(flag =>
+            {
+                var info = HarmfulFlags[flag.TraceFlag];
+                return new AuditFinding
+                {
+                    Id = $"CFG-006-TF{flag.TraceFlag}",
+                    Title = $"Potentially harmful global trace flag TF {flag.TraceFlag} is enabled",
+                    Category = Category,
+                    Severity = info.Severity,
+                    DatabaseObject = "server",
+                    Description = info.Description,
+                    Impact = "Global trace flags affect all databases and connections on the instance. Incorrect or outdated trace flags can cause unexpected behavior, degraded performance, or hidden errors.",
+                    Recommendation = $"Review whether trace flag {flag.TraceFlag} is still needed. If it was applied as a workaround, verify the underlying issue is resolved and disable it.",
+                    ServiceWindow = ServiceWindowAdvisor.No("DBCC TRACEOFF takes effect immediately; no service window required."),
+                    FixScript = $"DBCC TRACEOFF({flag.TraceFlag}, -1); -- Disables TF {flag.TraceFlag} globally",
+                    Evidence =
+                    [
+                        new FindingEvidence("TraceFlag", flag.TraceFlag.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                        new FindingEvidence("IsGlobal", "Yes"),
+                    ],
+                };
+            })
+            .ToList();
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}
+
 internal sealed class TempDbFileCountCheck : IHealthCheck
 {
     public string Id => "TMPDB-001";

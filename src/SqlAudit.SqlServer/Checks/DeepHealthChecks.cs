@@ -1244,3 +1244,85 @@ internal sealed class IntegrityCheckRecencyCheck : IHealthCheck
         ]);
     }
 }
+
+internal sealed class ColumnstoreOpportunityCheck : IHealthCheck
+{
+    public string Id => "IDX-011";
+
+    public string Title => "Columnstore index opportunity on large scan-heavy table";
+
+    public string Category => "Indexes";
+
+    public Task<IReadOnlyCollection<AuditFinding>> ExecuteAsync(HealthCheckContext context, CancellationToken cancellationToken)
+    {
+        var findings = new List<AuditFinding>();
+
+        var tableObjectIds = context.Snapshot.Tables
+            .Where(t => t.RowCount >= context.Options.LargeTableRowThreshold)
+            .Select(t => t.ObjectId)
+            .ToHashSet();
+
+        var columnstoreObjectIds = context.Snapshot.Indexes
+            .Where(i => i.IndexType.Contains("COLUMNSTORE", StringComparison.OrdinalIgnoreCase))
+            .Select(i => i.ObjectId)
+            .ToHashSet();
+
+        var usageByClustered = context.Snapshot.IndexUsage
+            .Where(u => u.IndexId == 1)
+            .ToDictionary(u => u.ObjectId);
+
+        foreach (var table in context.Snapshot.Tables
+            .Where(t => tableObjectIds.Contains(t.ObjectId) && !columnstoreObjectIds.Contains(t.ObjectId)))
+        {
+            if (!usageByClustered.TryGetValue(table.ObjectId, out var usage))
+            {
+                continue;
+            }
+
+            var totalReads = usage.UserSeeks + usage.UserScans + usage.UserLookups;
+            if (totalReads == 0 || usage.UserScans == 0)
+            {
+                continue;
+            }
+
+            var scanRatio = (double)usage.UserScans / (double)(usage.UserSeeks + 1);
+            if (scanRatio < 5.0)
+            {
+                continue;
+            }
+
+            var tableName = SqlName.Table(table.SchemaName, table.TableName);
+
+            findings.Add(new AuditFinding
+            {
+                Id = $"IDX-011-{table.ObjectId}",
+                Title = "Large table may benefit from a non-clustered columnstore index",
+                Category = Category,
+                Severity = AuditSeverity.Info,
+                DatabaseObject = tableName,
+                Description = $"Table '{tableName}' has {table.RowCount:N0} rows and its clustered index shows {usage.UserScans:N0} scans vs {usage.UserSeeks:N0} seeks (ratio {scanRatio:F1}:1), suggesting it is being range-scanned frequently. No columnstore index exists on this table.",
+                Impact = "For analytical or reporting queries that scan large portions of a table, a non-clustered columnstore index can reduce query time by orders of magnitude through compression and batch-mode execution.",
+                Recommendation = "Evaluate whether this table is accessed by analytical workloads. If so, consider adding a non-clustered columnstore index covering the frequently queried columns. Test on a non-production copy first.",
+                ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
+                    AuditOperationRisk.PotentiallyOnlineIndexBuild,
+                    "Building a columnstore index can be done ONLINE but may consume significant CPU and I/O on large tables."),
+                FixScript = $"""
+                    -- TODO: Replace <column_list> with the actual columns used in analytical queries.
+                    -- Building online reduces blocking but requires Enterprise edition or SQL 2019+.
+                    CREATE NONCLUSTERED COLUMNSTORE INDEX [NCCI_{SqlName.ObjectNameSuffix(table.TableName)}_Analytical]
+                        ON {tableName} (<column_list>)
+                        WITH (ONLINE = ON);
+                    """,
+                Evidence =
+                [
+                    new FindingEvidence("RowCount", table.RowCount.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("UserSeeks", usage.UserSeeks.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("UserScans", usage.UserScans.ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("ScanRatio", scanRatio.ToString("F1", CultureInfo.InvariantCulture)),
+                ],
+            });
+        }
+
+        return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+}

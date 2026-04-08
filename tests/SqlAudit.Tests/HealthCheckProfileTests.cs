@@ -11,8 +11,8 @@ public sealed class HealthCheckProfileTests
         var deep = SqlServerHealthChecks.CreateDeep();
 
         Assert.True(quick.Count < deep.Count);
-        Assert.Equal(28, quick.Count);
-        Assert.Equal(36, deep.Count);
+        Assert.Equal(43, quick.Count);
+        Assert.Equal(52, deep.Count);
 
         Assert.Contains(quick, check => string.Equals(check.Id, "CFG-001", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(deep, check => string.Equals(check.Id, "CFG-001", StringComparison.OrdinalIgnoreCase));

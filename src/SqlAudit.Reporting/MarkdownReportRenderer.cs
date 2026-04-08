@@ -35,6 +35,10 @@ public static class MarkdownReportRenderer
         WritePlanCacheHealth(sb, report);
         WriteSleepingTransactions(sb, report);
         WriteGrowthForecasts(sb, report);
+        WriteDatabaseOptions(sb, report);
+        WriteVolumeStats(sb, report);
+        WriteFailedAgentJobs(sb, report);
+        WriteGlobalTraceFlags(sb, report);
         WriteFindings(sb, report);
 
         return sb.ToString();
@@ -811,6 +815,125 @@ public static class MarkdownReportRenderer
                 : s.LastQueryText;
             sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
                 $"| {s.SessionId} | `{EscapeInline(s.LoginName)}` | `{EscapeInline(s.DatabaseName)}` | {s.OpenTransactionCount} | {s.ElapsedMinutes:F1} | `{EscapeInline(queryPreview)}` |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteDatabaseOptions(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Database Options");
+        sb.AppendLine();
+
+        var opts = report.DatabaseOptions;
+        if (opts is null)
+        {
+            sb.AppendLine("Database options data was not collected.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Option | Value |");
+        sb.AppendLine("|---|---|");
+        sb.AppendLine($"| AUTO_SHRINK | `{(opts.AutoShrink ? "ON ⚠️" : "OFF")}` |");
+        sb.AppendLine($"| AUTO_CLOSE | `{(opts.AutoClose ? "ON ⚠️" : "OFF")}` |");
+        sb.AppendLine($"| PAGE_VERIFY | `{EscapeInline(opts.PageVerify)}` |");
+        sb.AppendLine($"| READ_COMMITTED_SNAPSHOT | `{(opts.IsRcsiEnabled ? "ON" : "OFF")}` |");
+        sb.AppendLine($"| QUERY_STORE | `{(opts.QueryStoreEnabled ? "ON" : "OFF")}` |");
+        if (opts.QueryStoreEnabled)
+        {
+            sb.AppendLine($"| QUERY_STORE_STATE | `{EscapeInline(opts.QueryStoreState)}` |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteVolumeStats(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Storage Volumes");
+        sb.AppendLine();
+
+        if (report.VolumeStats.Count == 0)
+        {
+            sb.AppendLine("Volume statistics data was not collected (may require VIEW SERVER STATE permission).");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Volume | File | Type | Available GB | Total GB | Available % |");
+        sb.AppendLine("|---|---|---|---:|---:|---:|");
+
+        foreach (var v in report.VolumeStats.OrderBy(v => v.VolumeMount, StringComparer.OrdinalIgnoreCase))
+        {
+            var totalGb = v.TotalBytes / (1024m * 1024 * 1024);
+            var availGb = v.AvailableBytes / (1024m * 1024 * 1024);
+            string warning;
+            if (v.AvailablePercent < 5m)
+            {
+                warning = " ⛔";
+            }
+            else if (v.AvailablePercent < 15m)
+            {
+                warning = " ⚠️";
+            }
+            else
+            {
+                warning = string.Empty;
+            }
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(v.VolumeMount)}` | `{EscapeInline(v.LogicalName)}` | {v.FileType} | {availGb:F1} | {totalGb:F1} | {v.AvailablePercent:F1}%{warning} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteFailedAgentJobs(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### SQL Agent Job Failures (Last 7 Days)");
+        sb.AppendLine();
+
+        if (report.FailedAgentJobs.Count == 0)
+        {
+            sb.AppendLine("No SQL Agent job failures in the last 7 days (or SQL Agent data not accessible).");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Job Name | Step | Last Failed (UTC) | Error |");
+        sb.AppendLine("|---|---|---|---|");
+
+        foreach (var job in report.FailedAgentJobs.Take(20))
+        {
+            var errPreview = job.ErrorMessage.Length > 80
+                ? string.Concat(job.ErrorMessage.AsSpan(0, 80), "…")
+                : job.ErrorMessage;
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| `{EscapeInline(job.JobName)}` | `{EscapeInline(job.StepName)}` | {job.LastRunUtc:u} | {EscapeInline(errPreview)} |");
+        }
+
+        sb.AppendLine();
+    }
+
+    private static void WriteGlobalTraceFlags(StringBuilder sb, AuditReport report)
+    {
+        sb.AppendLine("### Active Global Trace Flags");
+        sb.AppendLine();
+
+        var globalFlags = report.GlobalTraceFlags.Where(f => f.IsGlobal).ToArray();
+        if (globalFlags.Length == 0)
+        {
+            sb.AppendLine("No global trace flags are enabled.");
+            sb.AppendLine();
+            return;
+        }
+
+        sb.AppendLine("| Trace Flag | Global |");
+        sb.AppendLine("|---:|---|");
+
+        foreach (var flag in globalFlags.OrderBy(f => f.TraceFlag))
+        {
+            sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture,
+                $"| {flag.TraceFlag} | Yes |");
         }
 
         sb.AppendLine();
