@@ -8,34 +8,78 @@ internal static class InteractiveConfigWizard
 {
     public static int Run(CliOptions options)
     {
-        var targetPath = ProjectConfigurationResolver.ResolveConfigPath(options.ConfigPath);
-
         if (options.NonInteractive)
         {
-            return RunNonInteractive(targetPath, options.Preset ?? ConfigPreset.Deep);
+            var targetPath = ResolveTargetPath(options.ConfigPath, options.ProjectName);
+            return RunNonInteractive(targetPath, options.Preset ?? ConfigPreset.Deep, options.ProjectName);
         }
 
-        return RunInteractive(targetPath, options.Preset);
+        return RunInteractive(options.ConfigPath, options.ProjectName, options.Preset);
     }
 
-    private static int RunNonInteractive(string targetPath, ConfigPreset preset)
+    private static string ResolveTargetPath(string? explicitConfigPath, string? projectName)
     {
-        var config = ConfigPresetFactory.Create(preset);
+        if (!string.IsNullOrWhiteSpace(explicitConfigPath))
+        {
+            return explicitConfigPath;
+        }
+
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            return SlugifyName(projectName) + ".sqlaudit.json";
+        }
+
+        return ProjectConfigurationResolver.ResolveConfigPath(null);
+    }
+
+    private static int RunNonInteractive(string targetPath, ConfigPreset preset, string? projectName)
+    {
+        var config = ConfigPresetFactory.Create(preset, projectName);
         ProjectConfigurationResolver.SaveConfig(targetPath, config);
 
         Console.WriteLine("Config saved (non-interactive).");
         Console.WriteLine($"- Path: {Path.GetFullPath(targetPath)}");
         Console.WriteLine($"- Preset: {PresetName(preset)}");
+        if (!string.IsNullOrWhiteSpace(projectName))
+        {
+            Console.WriteLine($"- Project: {projectName}");
+        }
 
         return 0;
     }
 
-    private static int RunInteractive(string targetPath, ConfigPreset? preset)
+    private static int RunInteractive(string? explicitConfigPath, string? nameFromFlag, ConfigPreset? preset)
     {
-        var existing = ProjectConfigurationResolver.TryLoad(targetPath)
+        Console.WriteLine("SqlAudit interactive config wizard");
+        Console.WriteLine();
+
+        // Load initial defaults from whatever path is currently resolvable.
+        var initialPath = ProjectConfigurationResolver.ResolveConfigPath(explicitConfigPath);
+        var existing = ProjectConfigurationResolver.TryLoad(initialPath)
             ?? (preset.HasValue ? ConfigPresetFactory.Create(preset.Value) : null);
 
-        Console.WriteLine("SqlAudit interactive config wizard");
+        // --name flag skips the prompt; otherwise ask interactively.
+        var projectName = !string.IsNullOrWhiteSpace(nameFromFlag)
+            ? nameFromFlag
+            : PromptProjectName(existing?.ProjectName);
+
+        string targetPath;
+        if (!string.IsNullOrWhiteSpace(explicitConfigPath))
+        {
+            targetPath = explicitConfigPath;
+        }
+        else
+        {
+            targetPath = SlugifyName(projectName) + ".sqlaudit.json";
+
+            // If the derived path differs from the initial default, try loading
+            // existing config from the new path so defaults are project-specific.
+            if (!string.Equals(targetPath, initialPath, StringComparison.OrdinalIgnoreCase))
+            {
+                existing = ProjectConfigurationResolver.TryLoad(targetPath) ?? existing;
+            }
+        }
+
         Console.WriteLine($"Target file: {Path.GetFullPath(targetPath)}");
         if (preset.HasValue)
         {
@@ -68,6 +112,7 @@ internal static class InteractiveConfigWizard
 
         var config = new ProjectConfigFile
         {
+            ProjectName = projectName,
             ConnectionString = connectionString,
             Profile = profile,
             OutputFormat = format,
@@ -89,6 +134,7 @@ internal static class InteractiveConfigWizard
         Console.WriteLine();
         Console.WriteLine("Config saved.");
         Console.WriteLine($"- Path: {Path.GetFullPath(targetPath)}");
+        Console.WriteLine($"- Project: {projectName}");
         Console.WriteLine($"- Profile: {profile}");
         Console.WriteLine($"- Format: {format}");
         Console.WriteLine($"- Active checks: {(useDefaultCheckSet ? "default set" : active.Count.ToString(CultureInfo.InvariantCulture))}");
@@ -101,6 +147,37 @@ internal static class InteractiveConfigWizard
         ConfigPreset.DeepStrict => "deep-strict",
         _ => preset.ToString().ToLowerInvariant(),
     };
+
+    private static string PromptProjectName(string? existing)
+    {
+        return PromptString("Project name", existing ?? "project", allowEmpty: false)!;
+    }
+
+    private static string SlugifyName(string name)
+    {
+        var sb = new System.Text.StringBuilder();
+        var lastWasHyphen = false;
+        foreach (var ch in name.Trim().ToLowerInvariant())
+        {
+            if ((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.' || ch == '_')
+            {
+                sb.Append(ch);
+                lastWasHyphen = false;
+            }
+            else if (!lastWasHyphen && sb.Length > 0)
+            {
+                sb.Append('-');
+                lastWasHyphen = true;
+            }
+        }
+
+        while (sb.Length > 0 && sb[^1] == '-')
+        {
+            sb.Remove(sb.Length - 1, 1);
+        }
+
+        return sb.Length == 0 ? "project" : sb.ToString();
+    }
 
     private static HashSet<string> BuildDefaultActiveSet(IReadOnlyList<string>? configuredIds, IReadOnlyList<CheckDescriptor> checks)
     {

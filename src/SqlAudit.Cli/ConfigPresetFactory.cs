@@ -4,12 +4,13 @@ namespace SqlAudit.Cli;
 
 internal static class ConfigPresetFactory
 {
-    public static ProjectConfigFile Create(ConfigPreset preset)
+    public static ProjectConfigFile Create(ConfigPreset preset, string? projectName = null)
     {
         return preset switch
         {
             ConfigPreset.Quick => new ProjectConfigFile
             {
+                ProjectName = projectName,
                 Profile = AuditProfile.Quick,
                 OutputFormat = OutputFormat.Both,
                 OutputDirectory = "audit-output/quick",
@@ -24,6 +25,7 @@ internal static class ConfigPresetFactory
             },
             ConfigPreset.DeepStrict => new ProjectConfigFile
             {
+                ProjectName = projectName,
                 Profile = AuditProfile.Deep,
                 OutputFormat = OutputFormat.Both,
                 OutputDirectory = "audit-output/deep-strict",
@@ -44,6 +46,7 @@ internal static class ConfigPresetFactory
             },
             _ => new ProjectConfigFile
             {
+                ProjectName = projectName,
                 Profile = AuditProfile.Deep,
                 OutputFormat = OutputFormat.Both,
                 OutputDirectory = "audit-output/deep",

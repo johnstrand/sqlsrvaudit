@@ -57,6 +57,8 @@ internal sealed class CliOptions
 
     public OutputFormat? OutputFormat { get; init; }
 
+    public string? ProjectName { get; init; }
+
     public bool NonInteractive { get; init; }
 
     public bool Force { get; init; }
@@ -133,6 +135,7 @@ internal sealed class CliOptions
             OutputFormat = enumOptions.Format,
             NonInteractive = parseResult.GetValue(parser.NonInteractive),
             Force = parseResult.GetValue(parser.Force),
+            ProjectName = parseResult.GetValue(parser.Name),
             Verbosity = verbosity,
             Preset = enumOptions.Preset,
             FailOnSeverity = enumOptions.FailOnSeverity,
@@ -443,6 +446,7 @@ internal sealed class CliOptions
             SuppressionsPathOption = CreateOption<string?>("--suppressions", "Suppressions JSON file path"),
             NonInteractive = CreateOption<bool>("--non-interactive", "Create config without prompts"),
             Force = CreateOption<bool>("--force", "Overwrite existing file"),
+            Name = CreateOption<string?>("--name", "Project name; used to derive the config file name"),
             Verbose = CreateOption<bool>("--verbose", "Show detailed runtime output"),
             Quiet = CreateOption<bool>("--quiet", "Show minimal runtime output"),
             Preset = CreateOption<string?>("--preset", "Config preset: quick|deep|deep-strict"),
@@ -509,6 +513,7 @@ internal sealed class CliOptions
         return new Command("init-config", "Create or update project configuration.")
         {
             parser.Config,
+            parser.Name,
             parser.NonInteractive,
             parser.Preset,
         };
@@ -628,6 +633,8 @@ internal sealed class CliOptions
 
         public Option<bool> Force { get; set; } = null!;
 
+        public Option<string?> Name { get; set; } = null!;
+
         public Option<bool> Verbose { get; set; } = null!;
 
         public Option<bool> Quiet { get; set; } = null!;
@@ -713,6 +720,8 @@ internal sealed class AuditOptionsOverrides
 
 internal sealed class ProjectConfigFile
 {
+    public string? ProjectName { get; init; }
+
     public string? ConnectionString { get; init; }
 
     public AuditProfile? Profile { get; init; }
