@@ -57,6 +57,10 @@ public sealed class DatabaseSnapshot
     public IReadOnlyList<SecurityHygieneIssueInfo> SecurityHygieneIssues { get; init; } = [];
 
     public IReadOnlyList<CollectionWarning> CollectionWarnings { get; init; } = [];
+
+    public IReadOnlyList<ColumnInfo> Columns { get; init; } = [];
+
+    public IReadOnlyList<ColumnNullStats> ColumnNullStats { get; init; } = [];
 }
 
 public sealed record TableInfo(
@@ -251,3 +255,19 @@ public sealed record TableGrowthForecastInfo(
     decimal Projected90DayReservedMb);
 
 public sealed record CollectionWarning(string Section, string Reason);
+
+public sealed record ColumnInfo(
+    int ObjectId,
+    string SchemaName,
+    string TableName,
+    string ColumnName,
+    string DataType,
+    int MaxLength,
+    bool IsNullable,
+    int ColumnId);
+
+public sealed record ColumnNullStats(
+    int ObjectId,
+    string SchemaName,
+    string TableName,
+    string ColumnName);

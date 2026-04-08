@@ -65,6 +65,18 @@ public sealed class SqlServerSnapshotCollector
                 "Table Statistics").ConfigureAwait(false)
             : (IReadOnlyList<StatisticsInfo>)[];
 
+        var columns = await TryReadOptionalListAsync(
+            () => ReadColumnsAsync(connection, cancellationToken),
+            warnings,
+            "Column Metadata").ConfigureAwait(false);
+
+        var columnNullStats = profile == AuditProfile.Deep
+            ? await TryReadOptionalListAsync(
+                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
+                warnings,
+                "Column Null Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<ColumnNullStats>)[];
+
         var snapshot = new DatabaseSnapshot
         {
             CapturedAtUtc = DateTimeOffset.UtcNow,
@@ -95,6 +107,8 @@ public sealed class SqlServerSnapshotCollector
             BackupPosture = backupPosture,
             SecurityHygieneIssues = securityHygieneIssues,
             CollectionWarnings = warnings,
+            Columns = columns,
+            ColumnNullStats = columnNullStats,
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
@@ -178,6 +192,12 @@ public sealed class SqlServerSnapshotCollector
             BackupPosture = snapshot.BackupPosture,
             SecurityHygieneIssues = snapshot.SecurityHygieneIssues,
             CollectionWarnings = snapshot.CollectionWarnings,
+            Columns = snapshot.Columns
+                .Where(c => tableIds.Contains(c.ObjectId))
+                .ToArray(),
+            ColumnNullStats = snapshot.ColumnNullStats
+                .Where(c => tableIds.Contains(c.ObjectId))
+                .ToArray(),
         };
     }
 
@@ -1290,6 +1310,91 @@ public sealed class SqlServerSnapshotCollector
                     lastLog is null ? null : Convert.ToDecimal((now - lastLog.Value).TotalHours, CultureInfo.InvariantCulture));
             }).ConfigureAwait(false);
     }
+
+    private static async Task<IReadOnlyList<ColumnInfo>> ReadColumnsAsync(
+        SqlConnection connection,
+        CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                c.object_id,
+                s.name AS schema_name,
+                t.name AS table_name,
+                c.name AS column_name,
+                tp.name AS data_type,
+                c.max_length,
+                c.is_nullable,
+                c.column_id
+            FROM sys.columns c
+            INNER JOIN sys.tables t ON t.object_id = c.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            INNER JOIN sys.types tp ON tp.user_type_id = c.user_type_id
+            WHERE t.is_ms_shipped = 0
+            ORDER BY s.name, t.name, c.column_id
+        """;
+
+        return await ReadListAsync(connection, sql,
+            reader => new ColumnInfo(
+                SqlRead.Int(reader, "object_id"),
+                SqlRead.String(reader, "schema_name"),
+                SqlRead.String(reader, "table_name"),
+                SqlRead.String(reader, "column_name"),
+                SqlRead.String(reader, "data_type"),
+                SqlRead.Int(reader, "max_length"),
+                SqlRead.Bool(reader, "is_nullable"),
+                SqlRead.Int(reader, "column_id")),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<IReadOnlyList<ColumnNullStats>> ReadColumnNullStatsAsync(
+        SqlConnection connection,
+        IReadOnlyList<ColumnInfo> columns,
+        IReadOnlyList<TableInfo> tables,
+        CancellationToken cancellationToken)
+    {
+        const int maxColumnsPerTable = 30;
+        const long maxRowsForSampling = 5_000_000;
+        const int minRowsForSampling = 1_000;
+
+        var rowCountByObjectId = tables.ToDictionary(t => t.ObjectId, t => t.RowCount);
+
+        var nullableByTable = columns
+            .Where(c => c.IsNullable && rowCountByObjectId.TryGetValue(c.ObjectId, out var rows)
+                && rows >= minRowsForSampling && rows <= maxRowsForSampling)
+            .GroupBy(c => c.ObjectId);
+
+        var results = new List<ColumnNullStats>();
+
+        foreach (var group in nullableByTable)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var cols = group.Take(maxColumnsPerTable).ToArray();
+            var first = cols[0];
+            var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
+
+            var parts = cols.Select(c =>
+                $"SELECT N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
+                $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+
+            var sql = $"SELECT column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
+
+            await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var colName = reader.GetString(0);
+                results.Add(new ColumnNullStats(first.ObjectId, first.SchemaName, first.TableName, colName));
+            }
+        }
+
+        return results;
+    }
+
+    private static string EscapeBracket(string name) => name.Replace("]", "]]");
+
+    private static string EscapeSqlString(string value) => value.Replace("'", "''");
 
     private static async Task<IReadOnlyList<SecurityHygieneIssueInfo>> ReadSecurityHygieneIssuesAsync(
         SqlConnection connection,

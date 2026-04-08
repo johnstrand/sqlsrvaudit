@@ -25,6 +25,10 @@ public static class SqlServerHealthChecks
         new("CFG-001", QuickEnabled: true, DeepEnabled: true, () => new CompatibilityLevelCheck()),
         new("CAP-001", QuickEnabled: true, DeepEnabled: true, () => new IdentityExhaustionCheck()),
         new("IDX-008", QuickEnabled: false, DeepEnabled: true, () => new OverWideIndexKeyCheck()),
+        new("WAIT-001", QuickEnabled: true, DeepEnabled: true, () => new DominantWaitCategoryCheck()),
+        new("WAIT-002", QuickEnabled: true, DeepEnabled: true, () => new CpuPressureCheck()),
+        new("COL-001", QuickEnabled: false, DeepEnabled: true, () => new NullableColumnWithNoNullsCheck()),
+        new("COL-002", QuickEnabled: true, DeepEnabled: true, () => new OversizedStringColumnCheck()),
     ];
 
     public static IReadOnlyCollection<IHealthCheck> Create(

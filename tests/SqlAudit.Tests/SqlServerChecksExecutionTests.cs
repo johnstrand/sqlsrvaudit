@@ -297,6 +297,9 @@ public sealed class SqlServerChecksExecutionTests
         IReadOnlyList<ForeignKeyInfo>? foreignKeys = null,
         IReadOnlyList<StatisticsInfo>? statistics = null,
         IReadOnlyList<IdentityColumnInfo>? identityColumns = null,
+        IReadOnlyList<ColumnInfo>? columns = null,
+        IReadOnlyList<ColumnNullStats>? columnNullStats = null,
+        IReadOnlyList<WaitStatInfo>? waitStats = null,
         bool autoCreateStatisticsOn = true,
         bool autoUpdateStatisticsOn = true,
         string productVersion = "16.0",
@@ -322,9 +325,110 @@ public sealed class SqlServerChecksExecutionTests
                 ForeignKeys = foreignKeys ?? [],
                 Statistics = statistics ?? [],
                 IdentityColumns = identityColumns ?? [],
+                Columns = columns ?? [],
+                ColumnNullStats = columnNullStats ?? [],
+                TopWaitStats = waitStats ?? [],
             },
             Options = AuditOptions.Default,
         };
+    }
+
+    [Fact]
+    public async Task DominantWaitCategoryCheck_FlagsCategoryAbove50Percent()
+    {
+        var context = CreateContext(waitStats:
+        [
+            new WaitStatInfo("PAGEIOLATCH_SH", 1000, WaitTimeSeconds: 80m, ResourceWaitSeconds: 80m, SignalWaitSeconds: 0m, AverageWaitMs: 80m, Category: "I/O"),
+            new WaitStatInfo("LCK_M_X",        200,  WaitTimeSeconds: 20m, ResourceWaitSeconds: 20m, SignalWaitSeconds: 0m, AverageWaitMs: 10m, Category: "Locking"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("WAIT-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("WAIT-001-I/O", finding.Id);
+        Assert.Contains("I/O", finding.Title, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DominantWaitCategoryCheck_NoFindingWhenNoCategoryDominates()
+    {
+        var context = CreateContext(waitStats:
+        [
+            new WaitStatInfo("PAGEIOLATCH_SH", 500, WaitTimeSeconds: 40m, ResourceWaitSeconds: 40m, SignalWaitSeconds: 0m, AverageWaitMs: 8m, Category: "I/O"),
+            new WaitStatInfo("LCK_M_X",        500, WaitTimeSeconds: 35m, ResourceWaitSeconds: 35m, SignalWaitSeconds: 0m, AverageWaitMs: 7m, Category: "Locking"),
+            new WaitStatInfo("SOS_SCHEDULER",  300, WaitTimeSeconds: 25m, ResourceWaitSeconds: 10m, SignalWaitSeconds: 15m, AverageWaitMs: 8m, Category: "CPU/Scheduler"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("WAIT-001", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task CpuPressureCheck_FlagsHighSignalWaitRatio()
+    {
+        var context = CreateContext(waitStats:
+        [
+            new WaitStatInfo("SOS_SCHEDULER_YIELD", 5000, WaitTimeSeconds: 60m, ResourceWaitSeconds: 20m, SignalWaitSeconds: 40m, AverageWaitMs: 12m, Category: "CPU/Scheduler"),
+            new WaitStatInfo("PAGEIOLATCH_SH",       500,  WaitTimeSeconds: 40m, ResourceWaitSeconds: 38m, SignalWaitSeconds: 2m,  AverageWaitMs: 8m,  Category: "I/O"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("WAIT-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("WAIT-002-CPU-PRESSURE", finding.Id);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task CpuPressureCheck_NoFindingWhenSignalWaitLow()
+    {
+        var context = CreateContext(waitStats:
+        [
+            new WaitStatInfo("PAGEIOLATCH_SH", 1000, WaitTimeSeconds: 100m, ResourceWaitSeconds: 98m, SignalWaitSeconds: 2m, AverageWaitMs: 10m, Category: "I/O"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("WAIT-002", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task NullableColumnWithNoNullsCheck_FlagsNullStatEntries()
+    {
+        var context = CreateContext(
+            tables: [new TableInfo(1, "dbo", "Orders", 50_000, 100m, HasPrimaryKey: true, IsHeap: false)],
+            columnNullStats:
+            [
+                new ColumnNullStats(1, "dbo", "Orders", "Notes"),
+                new ColumnNullStats(1, "dbo", "Orders", "ShippedDate"),
+            ]);
+
+        var findings = await ExecuteCheckAsync("COL-001", context);
+
+        Assert.Equal(2, findings.Count);
+        Assert.All(findings, f => Assert.Equal(AuditSeverity.Info, f.Severity));
+        Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes", StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.DatabaseObject.Contains("ShippedDate", StringComparison.Ordinal));
+        Assert.All(findings, f => Assert.Contains("NOT NULL", f.FixScript, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task OversizedStringColumnCheck_FlagsNvarcharMaxAndWideColumns()
+    {
+        var context = CreateContext(columns:
+        [
+            new ColumnInfo(1, "dbo", "Orders", "Notes",       "nvarchar", MaxLength: -1,   IsNullable: true,  ColumnId: 1),
+            new ColumnInfo(1, "dbo", "Orders", "Description", "varchar",  MaxLength: 8000, IsNullable: false, ColumnId: 2),
+            new ColumnInfo(1, "dbo", "Orders", "Code",        "nvarchar", MaxLength: 20,   IsNullable: false, ColumnId: 3),
+        ]);
+
+        var findings = await ExecuteCheckAsync("COL-002", context);
+
+        Assert.Equal(2, findings.Count);
+        Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes",       StringComparison.Ordinal) && f.Severity == AuditSeverity.Medium);
+        Assert.Contains(findings, f => f.DatabaseObject.Contains("Description", StringComparison.Ordinal));
+        Assert.DoesNotContain(findings, f => f.DatabaseObject.Contains("Code", StringComparison.Ordinal));
     }
 
     private static IndexInfo CreateIndex(
