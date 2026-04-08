@@ -1824,7 +1824,8 @@ public sealed class SqlServerSnapshotCollector
                 s.total_elapsed_time / 60000.0 AS elapsed_minutes,
                 ISNULL(CAST(t.text AS NVARCHAR(300)), N'') AS last_query_text
             FROM sys.dm_exec_sessions AS s
-            OUTER APPLY sys.dm_exec_sql_text(s.most_recent_sql_handle) AS t
+            LEFT JOIN sys.dm_exec_connections AS c ON s.session_id = c.session_id
+            OUTER APPLY sys.dm_exec_sql_text(c.most_recent_sql_handle) AS t
             WHERE s.status = 'sleeping'
               AND s.open_transaction_count > 0
               AND s.session_id <> @@SPID
@@ -1902,9 +1903,9 @@ public sealed class SqlServerSnapshotCollector
                 f.num_of_reads,
                 f.num_of_writes,
                 CASE WHEN f.num_of_reads = 0 THEN 0
-                     ELSE CAST(f.io_stall_read / f.num_of_reads AS DECIMAL(10,2)) END AS avg_read_latency_ms,
+                     ELSE CAST(f.io_stall_read_ms / f.num_of_reads AS DECIMAL(10,2)) END AS avg_read_latency_ms,
                 CASE WHEN f.num_of_writes = 0 THEN 0
-                     ELSE CAST(f.io_stall_write / f.num_of_writes AS DECIMAL(10,2)) END AS avg_write_latency_ms,
+                     ELSE CAST(f.io_stall_write_ms / f.num_of_writes AS DECIMAL(10,2)) END AS avg_write_latency_ms,
                 mf.size * 8.0 / 1024 AS size_mb
             FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS f
             INNER JOIN sys.master_files AS mf
