@@ -48,12 +48,13 @@ internal sealed class NullableColumnWithNoNullsCheck : IHealthCheck
                         -- Reason: Altering column nullability validates all rows.
                         -- Verify no application path inserts NULL before running.
                         ALTER TABLE {tableName}
-                        ALTER COLUMN {quotedColumn} <data_type> NOT NULL;
+                        ALTER COLUMN {quotedColumn} {col.DataTypeDefinition} NOT NULL;
                         """,
                     Evidence =
                     [
                         new FindingEvidence("SampledRows", rowCount.ToString("N0", CultureInfo.InvariantCulture)),
                         new FindingEvidence("NullsFound", "0"),
+                        new FindingEvidence("DataType", col.DataTypeDefinition),
                     ],
                 };
             })

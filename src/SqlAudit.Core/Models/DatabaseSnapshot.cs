@@ -296,6 +296,8 @@ public sealed record ColumnInfo(
     string ColumnName,
     string DataType,
     int MaxLength,
+    int Precision,
+    int Scale,
     bool IsNullable,
     int ColumnId);
 
@@ -303,7 +305,8 @@ public sealed record ColumnNullStats(
     int ObjectId,
     string SchemaName,
     string TableName,
-    string ColumnName);
+    string ColumnName,
+    string DataTypeDefinition);
 
 public sealed record CollectionProgress(string StepName, int Completed, int Total);
 

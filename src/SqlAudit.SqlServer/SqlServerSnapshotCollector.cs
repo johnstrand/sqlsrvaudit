@@ -1426,6 +1426,8 @@ public sealed class SqlServerSnapshotCollector
                 c.name AS column_name,
                 tp.name AS data_type,
                 c.max_length,
+                c.precision,
+                c.scale,
                 c.is_nullable,
                 c.column_id
             FROM sys.columns c
@@ -1444,6 +1446,8 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.String(reader, "column_name"),
                 SqlRead.String(reader, "data_type"),
                 SqlRead.Int(reader, "max_length"),
+                SqlRead.Int(reader, "precision"),
+                SqlRead.Int(reader, "scale"),
                 SqlRead.Bool(reader, "is_nullable"),
                 SqlRead.Int(reader, "column_id")),
             cancellationToken).ConfigureAwait(false);
@@ -1488,7 +1492,18 @@ public sealed class SqlServerSnapshotCollector
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
                 var colName = reader.GetString(0);
-                results.Add(new ColumnNullStats(first.ObjectId, first.SchemaName, first.TableName, colName));
+                var columnInfo = cols.FirstOrDefault(c => string.Equals(c.ColumnName, colName, StringComparison.Ordinal));
+                if (columnInfo is null)
+                {
+                    continue;
+                }
+
+                results.Add(new ColumnNullStats(
+                    first.ObjectId,
+                    first.SchemaName,
+                    first.TableName,
+                    colName,
+                    FormatColumnDataType(columnInfo)));
             }
         }
 
@@ -1496,6 +1511,38 @@ public sealed class SqlServerSnapshotCollector
     }
 
     private static string EscapeBracket(string name) => name.Replace("]", "]]", StringComparison.Ordinal);
+
+    private static string FormatColumnDataType(ColumnInfo column)
+    {
+        var dataType = column.DataType;
+        var type = dataType.ToLowerInvariant();
+
+        if (type is "varchar" or "char" or "varbinary" or "binary")
+        {
+            var length = column.MaxLength == -1 ? "max" : column.MaxLength.ToString(CultureInfo.InvariantCulture);
+            return $"{dataType}({length})";
+        }
+
+        if (type is "nvarchar" or "nchar")
+        {
+            var length = column.MaxLength == -1
+                ? "max"
+                : (column.MaxLength / 2).ToString(CultureInfo.InvariantCulture);
+            return $"{dataType}({length})";
+        }
+
+        if (type is "decimal" or "numeric")
+        {
+            return $"{dataType}({column.Precision.ToString(CultureInfo.InvariantCulture)},{column.Scale.ToString(CultureInfo.InvariantCulture)})";
+        }
+
+        if (type is "datetime2" or "datetimeoffset" or "time")
+        {
+            return $"{dataType}({column.Scale.ToString(CultureInfo.InvariantCulture)})";
+        }
+
+        return dataType;
+    }
 
     private static string EscapeSqlString(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 

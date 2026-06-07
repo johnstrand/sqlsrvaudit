@@ -432,8 +432,8 @@ public sealed class SqlServerChecksExecutionTests
             tables: [new TableInfo(1, "dbo", "Orders", 50_000, 100m, HasPrimaryKey: true, IsHeap: false)],
             columnNullStats:
             [
-                new ColumnNullStats(1, "dbo", "Orders", "Notes"),
-                new ColumnNullStats(1, "dbo", "Orders", "ShippedDate"),
+                new ColumnNullStats(1, "dbo", "Orders", "Notes", "nvarchar(100)"),
+                new ColumnNullStats(1, "dbo", "Orders", "ShippedDate", "datetime2(7)"),
             ]);
 
         var findings = await ExecuteCheckAsync("COL-001", context);
@@ -442,7 +442,8 @@ public sealed class SqlServerChecksExecutionTests
         Assert.All(findings, f => Assert.Equal(AuditSeverity.Info, f.Severity));
         Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes", StringComparison.Ordinal));
         Assert.Contains(findings, f => f.DatabaseObject.Contains("ShippedDate", StringComparison.Ordinal));
-        Assert.All(findings, f => Assert.Contains("NOT NULL", f.FixScript, StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.FixScript.Contains("nvarchar(100) NOT NULL", StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.FixScript.Contains("datetime2(7) NOT NULL", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -450,9 +451,9 @@ public sealed class SqlServerChecksExecutionTests
     {
         var context = CreateContext(columns:
         [
-            new ColumnInfo(1, "dbo", "Orders", "Notes",       "nvarchar", MaxLength: -1,   IsNullable: true,  ColumnId: 1),
-            new ColumnInfo(1, "dbo", "Orders", "Description", "varchar",  MaxLength: 8000, IsNullable: false, ColumnId: 2),
-            new ColumnInfo(1, "dbo", "Orders", "Code",        "nvarchar", MaxLength: 20,   IsNullable: false, ColumnId: 3),
+            new ColumnInfo(1, "dbo", "Orders", "Notes",       "nvarchar", MaxLength: -1,   Precision: 0, Scale: 0, IsNullable: true,  ColumnId: 1),
+            new ColumnInfo(1, "dbo", "Orders", "Description", "varchar",  MaxLength: 8000, Precision: 0, Scale: 0, IsNullable: false, ColumnId: 2),
+            new ColumnInfo(1, "dbo", "Orders", "Code",        "nvarchar", MaxLength: 20,   Precision: 0, Scale: 0, IsNullable: false, ColumnId: 3),
         ]);
 
         var findings = await ExecuteCheckAsync("COL-002", context);
