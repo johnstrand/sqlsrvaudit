@@ -1,3 +1,4 @@
+using Spectre.Console;
 using SqlAudit.Cli;
 using SqlAudit.Core.Execution;
 using SqlAudit.Core.Models;
@@ -218,7 +219,7 @@ static async Task WriteOutputsAsync(
     ScanOutput.EndStep(verbosity, stepReports, "Report files written");
 
     var stepScripts = ScanOutput.StartStep(verbosity, 6, 6, "Generate SQL remediation scripts");
-    CleanFixesDirectory(resolved.FixesDirectory);
+    CleanFixesDirectory(resolved.FixesDirectory, verbosity);
     var scripts = SqlFixScriptRenderer.Render(report);
     var combinedPath = Path.Combine(resolved.FixesDirectory, "all-fixes.sql");
     await File.WriteAllTextAsync(combinedPath, scripts.CombinedScript, cancellationToken).ConfigureAwait(false);
@@ -252,10 +253,15 @@ static void EnsureOutputDirectoriesExist(EffectiveRunOptions resolved)
     Directory.CreateDirectory(resolved.FixesDirectory);
 }
 
-static void CleanFixesDirectory(string fixesDirectory)
+static void CleanFixesDirectory(string fixesDirectory, LogVerbosity verbosity)
 {
     foreach (var file in Directory.EnumerateFiles(fixesDirectory, "*.sql", SearchOption.AllDirectories))
     {
+        if (verbosity >= LogVerbosity.Normal)
+        {
+            AnsiConsole.MarkupLine($"[grey]Deleting existing fix script:[/] [green]{file}[/]");
+        }
+
         File.Delete(file);
     }
 }
