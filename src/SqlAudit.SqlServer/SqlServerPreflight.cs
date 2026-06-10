@@ -17,8 +17,11 @@ public static class SqlServerPreflight
                 CONVERT(nvarchar(128), SERVERPROPERTY('ProductVersion')) AS product_version
         """;
 
-        await using var command = new SqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30,
+        };
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException("Preflight query returned no rows.");
