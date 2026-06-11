@@ -392,8 +392,10 @@ static DatabaseSnapshot? TryLoadSnapshot(string dataModelPath)
         var json = File.ReadAllText(dataModelPath);
         return JsonSerializer.Deserialize<DatabaseSnapshot>(json);
     }
-    catch (Exception)
+    catch (Exception ex)
     {
+        Console.Error.WriteLine($"Warning: Failed to load previous snapshot from '{dataModelPath}'. Growth forecasts will not be calculated.");
+        Console.Error.WriteLine($"Details: {ex.Message}");
         return null;
     }
 }
