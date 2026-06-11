@@ -229,17 +229,19 @@ static async Task WriteOutputsAsync(
     Directory.CreateDirectory(noWindowDir);
     Directory.CreateDirectory(requiresWindowDir);
 
+    var writeTasks = new List<Task>(scripts.NoWindowScripts.Count + scripts.RequiresWindowScripts.Count);
+
     foreach (var script in scripts.NoWindowScripts)
     {
-        await File.WriteAllTextAsync(Path.Combine(noWindowDir, script.Key), script.Value, cancellationToken)
-            .ConfigureAwait(false);
+        writeTasks.Add(File.WriteAllTextAsync(Path.Combine(noWindowDir, script.Key), script.Value, cancellationToken));
     }
 
     foreach (var script in scripts.RequiresWindowScripts)
     {
-        await File.WriteAllTextAsync(Path.Combine(requiresWindowDir, script.Key), script.Value, cancellationToken)
-            .ConfigureAwait(false);
+        writeTasks.Add(File.WriteAllTextAsync(Path.Combine(requiresWindowDir, script.Key), script.Value, cancellationToken));
     }
+
+    await Task.WhenAll(writeTasks).ConfigureAwait(false);
 
     ScanOutput.EndStep(verbosity, stepScripts, $"Script bundle written ({scripts.NoWindowScripts.Count} no-window, {scripts.RequiresWindowScripts.Count} requires-window)");
 }
