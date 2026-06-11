@@ -60,6 +60,7 @@ public static class SqlServerHealthChecks
         new("IDX-011", QuickEnabled: false, DeepEnabled: true, () => new ColumnstoreOpportunityCheck()),
         new("MAINT-002", QuickEnabled: true, DeepEnabled: true, () => new FailedAgentJobsCheck()),
         new("CFG-006", QuickEnabled: true, DeepEnabled: true, () => new HarmfulTraceFlagCheck()),
+        new("SEC-001", QuickEnabled: true, DeepEnabled: true, () => new SecurityHygieneCheck()),
     ];
 
     public static IReadOnlyCollection<IHealthCheck> Create(
