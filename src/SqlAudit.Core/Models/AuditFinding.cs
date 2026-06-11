@@ -1,9 +1,18 @@
 namespace SqlAudit.Core.Models;
 
+/// <summary>
+/// Represents an individual issue or recommendation discovered during the audit process.
+/// </summary>
 public sealed class AuditFinding
 {
+    /// <summary>
+    /// The unique rule identifier (e.g., IDX-001).
+    /// </summary>
     public required string Id { get; init; }
 
+    /// <summary>
+    /// A brief, human-readable summary of the finding.
+    /// </summary>
     public required string Title { get; init; }
 
     public required string Category { get; init; }

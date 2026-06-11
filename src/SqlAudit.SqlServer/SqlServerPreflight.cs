@@ -2,8 +2,18 @@ using Microsoft.Data.SqlClient;
 
 namespace SqlAudit.SqlServer;
 
+/// <summary>
+/// Handles the initial connectivity and permissions verification before a full audit scan.
+/// </summary>
 public static class SqlServerPreflight
 {
+    /// <summary>
+    /// Executes a preflight query to verify connectivity, SQL Server version, and `VIEW SERVER STATE` permissions.
+    /// </summary>
+    /// <param name="connectionString">The connection string to test.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="commandTimeoutSeconds">The command timeout in seconds for the preflight query.</param>
+    /// <returns>A preflight result indicating success or detailing permission issues.</returns>
     public static async Task<SqlServerPreflightResult> RunAsync(string connectionString, CancellationToken cancellationToken, int commandTimeoutSeconds = 30)
     {
         await using var connection = new SqlConnection(connectionString);

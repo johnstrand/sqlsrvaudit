@@ -1,5 +1,8 @@
 namespace SqlAudit.Core.Models;
 
+/// <summary>
+/// The master root document containing the complete output of an audit run, including environment metadata, findings, and telemetry.
+/// </summary>
 public sealed class AuditReport
 {
     public string SchemaVersion { get; init; } = "1.5";

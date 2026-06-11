@@ -1,5 +1,8 @@
 namespace SqlAudit.Core.Models;
 
+/// <summary>
+/// An point-in-time, in-memory representation of the database schema, configuration, and performance statistics used by health checks.
+/// </summary>
 public sealed class DatabaseSnapshot
 {
     public DateTimeOffset CapturedAtUtc { get; init; }
