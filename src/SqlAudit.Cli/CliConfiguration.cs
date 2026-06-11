@@ -73,6 +73,8 @@ internal sealed class CliOptions
 
     public required AuditOptionsOverrides AuditOptionOverrides { get; init; }
 
+    public int? CommandTimeout { get; init; }
+
     public static void PrintHelp()
     {
         var parser = BuildParser();
@@ -140,6 +142,7 @@ internal sealed class CliOptions
             Preset = enumOptions.Preset,
             FailOnSeverity = enumOptions.FailOnSeverity,
             ActiveCheckIds = ParseCheckIds(parseResult.GetValue(parser.Checks)),
+            CommandTimeout = parseResult.GetValue(parser.CommandTimeoutOption),
             AuditOptionOverrides = new AuditOptionsOverrides
             {
                 LargeTableRowThreshold = parseResult.GetValue(parser.LargeRows),
@@ -454,6 +457,7 @@ internal sealed class CliOptions
             Previous = CreateOption<string?>("--previous", "Baseline JSON report path"),
             Current = CreateOption<string?>("--current", "Current JSON report path"),
             PathAlias = CreateOption<string?>("--path", "Alias for --suppressions"),
+            CommandTimeoutOption = CreateOption<int?>("--timeout", "Query execution timeout in seconds"),
 
             LargeRows = CreateOption<long?>("--large-table-rows", "Large table row threshold"),
             UnusedMinUpdates = CreateOption<long?>("--unused-index-min-updates", "Unused index minimum updates threshold"),
@@ -489,6 +493,7 @@ internal sealed class CliOptions
         parser.Scan.Add(parser.Format);
         parser.Scan.Add(parser.Checks);
         parser.Scan.Add(parser.Output);
+        parser.Scan.Add(parser.CommandTimeoutOption);
         parser.Scan.Add(parser.Markdown);
         parser.Scan.Add(parser.Json);
         parser.Scan.Add(parser.FixesDir);
@@ -592,6 +597,7 @@ internal sealed class CliOptions
     private sealed class CliParser
     {
         public RootCommand Root { get; set; } = null!;
+        public Option<int?> CommandTimeoutOption { get; set; } = null!;
 
         public Command Scan { get; set; } = null!;
 
@@ -782,6 +788,8 @@ internal sealed class EffectiveRunOptions
     public required IReadOnlyList<string>? ActiveCheckIds { get; init; }
 
     public required AuditOptions AuditOptions { get; init; }
+
+    public int CommandTimeout { get; init; } = 30;
 }
 
 internal static class ProjectConfigurationResolver
@@ -833,6 +841,7 @@ internal static class ProjectConfigurationResolver
             FailOnSeverity = cliOptions.FailOnSeverity,
             ActiveCheckIds = activeCheckIds,
             AuditOptions = effectiveAuditOptions,
+            CommandTimeout = cliOptions.CommandTimeout ?? 30,
         };
     }
 

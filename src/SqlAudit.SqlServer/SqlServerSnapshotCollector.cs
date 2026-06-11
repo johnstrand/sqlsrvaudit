@@ -338,8 +338,11 @@ public sealed class SqlServerSnapshotCollector
                 CASE WHEN CONVERT(int, SERVERPROPERTY('EngineEdition')) IN (5, 8) THEN 1 ELSE 0 END AS is_azure
         """;
 
-        await using var command = new SqlCommand(sql, connection);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new SqlCommand(sql, connection)
+        {
+            CommandTimeout = 30,
+        };
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
 
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
@@ -1133,7 +1136,7 @@ public sealed class SqlServerSnapshotCollector
                     CommandTimeout = 30,
                 };
 
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
                 if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     return null;
@@ -1255,7 +1258,7 @@ public sealed class SqlServerSnapshotCollector
                     CommandTimeout = 30,
                 };
 
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
                 if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     return null;
@@ -1292,7 +1295,7 @@ public sealed class SqlServerSnapshotCollector
                     CommandTimeout = 30,
                 };
 
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
                 if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     return null;
@@ -1392,7 +1395,7 @@ public sealed class SqlServerSnapshotCollector
                     CommandTimeout = 30,
                 };
 
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
                 if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
                     return null;
@@ -1487,7 +1490,7 @@ public sealed class SqlServerSnapshotCollector
             var sql = $"SELECT column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
 
             await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -1740,10 +1743,7 @@ public sealed class SqlServerSnapshotCollector
     {
         const int maxLength = 300;
 
-        var normalized = string.Join(
-            ' ',
-            queryText
-                .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        var normalized = System.Text.RegularExpressions.Regex.Replace(queryText, @"\s+", " ", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(100)).Trim();
 
         if (normalized.Length <= maxLength)
         {
@@ -1766,7 +1766,7 @@ public sealed class SqlServerSnapshotCollector
             CommandTimeout = 120,
         };
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             rows.Add(map(reader));
@@ -1815,7 +1815,7 @@ public sealed class SqlServerSnapshotCollector
         {
             CommandTimeout = 60,
         };
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var field = SqlRead.String(reader, "Field");
@@ -1919,7 +1919,7 @@ public sealed class SqlServerSnapshotCollector
         {
             CommandTimeout = 30,
         };
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             var counterName = SqlRead.String(reader, "counter_name").Trim();
@@ -2005,7 +2005,7 @@ public sealed class SqlServerSnapshotCollector
         {
             CommandTimeout = 60,
         };
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return new PlanCacheInfo(
@@ -2072,7 +2072,7 @@ public sealed class SqlServerSnapshotCollector
         {
             CommandTimeout = 30,
         };
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             return new DatabaseOptionsInfo(

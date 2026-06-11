@@ -444,8 +444,8 @@ public sealed class SqlServerChecksExecutionTests
         Assert.All(findings, f => Assert.Equal(AuditSeverity.Info, f.Severity));
         Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes", StringComparison.Ordinal));
         Assert.Contains(findings, f => f.DatabaseObject.Contains("ShippedDate", StringComparison.Ordinal));
-        Assert.Contains(findings, f => f.FixScript.Contains("nvarchar(100) NOT NULL", StringComparison.Ordinal));
-        Assert.Contains(findings, f => f.FixScript.Contains("datetime2(7) NOT NULL", StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.FixScript != null && f.FixScript.Contains("nvarchar(100) NOT NULL", StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.FixScript != null && f.FixScript.Contains("datetime2(7) NOT NULL", StringComparison.Ordinal));
     }
 
     [Fact]
