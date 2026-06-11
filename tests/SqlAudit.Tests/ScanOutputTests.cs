@@ -170,7 +170,9 @@ public sealed class ScanOutputTests : IDisposable
         var report = new AuditReport
         {
             ServerName = "Server",
-            DatabaseName = "Database", Edition = "Developer", ProductVersion = "16.0",
+            DatabaseName = "Database",
+            Edition = "Developer",
+            ProductVersion = "16.0",
             CapturedAtUtc = DateTimeOffset.UtcNow,
             Findings = new List<AuditFinding>(),
             CheckExecutions = new List<CheckExecutionResult>(),
@@ -188,7 +190,9 @@ public sealed class ScanOutputTests : IDisposable
         var report = new AuditReport
         {
             ServerName = "Server",
-            DatabaseName = "Database", Edition = "Developer", ProductVersion = "16.0",
+            DatabaseName = "Database",
+            Edition = "Developer",
+            ProductVersion = "16.0",
             CapturedAtUtc = DateTimeOffset.UtcNow,
             Findings = new List<AuditFinding>(),
             CheckExecutions = new List<CheckExecutionResult>(),
@@ -200,7 +204,7 @@ public sealed class ScanOutputTests : IDisposable
         Assert.Contains("Requires window", _console.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("Duration", _console.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("00:00:05", _console.Output, StringComparison.OrdinalIgnoreCase);
-}
+    }
 
     [Fact]
     public void PrintCheckExecutions_Normal_DoesNotPrint()

@@ -49,57 +49,67 @@ public sealed class SqlServerSnapshotCollector
         var topResourceIntensiveQueries = await TryReadOptionalListAsync(
             () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
             warnings,
-            "Resource-intensive queries").ConfigureAwait(false);
+            "Resource-Intensive Queries").ConfigureAwait(false);
+
         Report("Wait statistics");
         var topWaitStats = await TryReadOptionalListAsync(
             () => ReadTopWaitStatsAsync(connection, cancellationToken),
             warnings,
-            "Wait statistics").ConfigureAwait(false);
+            "Wait Statistics").ConfigureAwait(false);
+
         Report("Query Store regressions");
         var queryStoreRegressions = await TryReadOptionalListAsync(
             () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
             warnings,
-            "Query Store regressions").ConfigureAwait(false);
+            "Query Store Regressions").ConfigureAwait(false);
+
         Report("Active blocking sessions");
         var activeBlockingSessions = await TryReadOptionalListAsync(
             () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
             warnings,
-            "Active blocking sessions").ConfigureAwait(false);
+            "Active Blocking Sessions").ConfigureAwait(false);
+
         Report("Deadlock summary");
         var deadlockSummary = await TryReadOptionalAsync(
             () => ReadDeadlockSummaryAsync(connection, cancellationToken),
             warnings,
-            "Deadlock summary").ConfigureAwait(false);
+            "Deadlock Summary").ConfigureAwait(false);
+
         Report("Missing index signals");
         var missingIndexSignals = await TryReadOptionalListAsync(
             () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
             warnings,
-            "Missing index signals").ConfigureAwait(false);
+            "Missing Index Signals").ConfigureAwait(false);
+
         Report("Log health");
         var logHealth = await TryReadOptionalAsync(
             () => ReadLogHealthAsync(connection, cancellationToken),
             warnings,
-            "Log health").ConfigureAwait(false);
+            "Log Health").ConfigureAwait(false);
+
         Report("TempDB pressure");
         var tempDbPressure = await TryReadOptionalAsync(
             () => ReadTempDbPressureAsync(connection, cancellationToken),
             warnings,
-            "TempDB pressure").ConfigureAwait(false);
+            "TempDB Pressure").ConfigureAwait(false);
+
         Report("File growth settings");
         var fileGrowthHealth = await TryReadOptionalListAsync(
             () => ReadFileGrowthHealthAsync(connection, cancellationToken),
             warnings,
-            "File growth settings").ConfigureAwait(false);
+            "File Growth Settings").ConfigureAwait(false);
+
         Report("Backup posture");
         var backupPosture = await TryReadOptionalAsync(
             () => ReadBackupPostureAsync(connection, cancellationToken),
             warnings,
-            "Backup posture").ConfigureAwait(false);
+            "Backup Posture").ConfigureAwait(false);
+
         Report("Security hygiene");
         var securityHygieneIssues = await TryReadOptionalListAsync(
             () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken),
             warnings,
-            "Security hygiene").ConfigureAwait(false);
+            "Security Hygiene").ConfigureAwait(false);
 
         Report("Index usage statistics");
         var indexUsage = await TryReadOptionalListAsync(
@@ -152,13 +162,13 @@ public sealed class SqlServerSnapshotCollector
         var lastDbccCheckDb = await TryReadOptionalStructAsync(
             () => ReadLastDbccCheckDbAsync(connection, cancellationToken),
             warnings,
-            "Integrity check history").ConfigureAwait(false);
+            "Integrity Check History").ConfigureAwait(false);
 
         Report("TempDB configuration");
         var tempDbConfig = await TryReadOptionalAsync(
             () => ReadTempDbConfigAsync(connection, cancellationToken),
             warnings,
-            "TempDB configuration").ConfigureAwait(false);
+            "TempDB Configuration").ConfigureAwait(false);
 
         Report("Sleeping transactions");
         var sleepingTransactions = await TryReadOptionalListAsync(
@@ -170,7 +180,7 @@ public sealed class SqlServerSnapshotCollector
         var memoryPressure = await TryReadOptionalAsync(
             () => ReadMemoryPressureAsync(connection, cancellationToken),
             warnings,
-            "Memory pressure").ConfigureAwait(false);
+            "Memory Pressure").ConfigureAwait(false);
 
         Report("File I/O latency");
         var fileIoLatency = await TryReadOptionalListAsync(
@@ -182,7 +192,7 @@ public sealed class SqlServerSnapshotCollector
         var planCache = await TryReadOptionalAsync(
             () => ReadPlanCacheAsync(connection, cancellationToken),
             warnings,
-            "Plan cache").ConfigureAwait(false);
+            "Plan Cache").ConfigureAwait(false);
 
         Report("Table compression");
         var tableCompression = profile == AuditProfile.Deep
@@ -196,7 +206,7 @@ public sealed class SqlServerSnapshotCollector
         var databaseOptions = await TryReadOptionalAsync(
             () => ReadDatabaseOptionsAsync(connection, cancellationToken),
             warnings,
-            "Database options").ConfigureAwait(false);
+            "Database Options").ConfigureAwait(false);
 
         Report("Volume stats");
         var volumeStats = await TryReadOptionalListAsync(
@@ -214,7 +224,7 @@ public sealed class SqlServerSnapshotCollector
         var globalTraceFlags = await TryReadOptionalListAsync(
             () => ReadGlobalTraceFlagsAsync(connection, cancellationToken),
             warnings,
-            "Global trace flags").ConfigureAwait(false);
+            "Global Trace Flags").ConfigureAwait(false);
 
         var snapshot = new DatabaseSnapshot
         {
@@ -891,33 +901,33 @@ public sealed class SqlServerSnapshotCollector
         }
 
         const string sql = """
-                SELECT TOP (10)
-                    COALESCE(CONVERT(varchar(34), qs.query_hash, 1), N'0x0') AS query_hash,
-                    qs.execution_count,
-                    CONVERT(decimal(19,2), qs.total_worker_time / 1000.0) AS total_cpu_ms,
-                    CONVERT(decimal(19,2), CASE WHEN qs.execution_count = 0 THEN 0 ELSE (qs.total_worker_time * 1.0 / qs.execution_count) / 1000.0 END) AS average_cpu_ms,
-                    CONVERT(decimal(19,2), qs.total_elapsed_time / 1000.0) AS total_duration_ms,
-                    CONVERT(decimal(19,2), CASE WHEN qs.execution_count = 0 THEN 0 ELSE (qs.total_elapsed_time * 1.0 / qs.execution_count) / 1000.0 END) AS average_duration_ms,
-                    qs.total_logical_reads,
-                    qs.total_logical_writes,
-                    qs.last_execution_time AS last_execution_utc,
-                    SUBSTRING(
-                        st.text,
-                        (qs.statement_start_offset / 2) + 1,
-                        CASE
-                            WHEN qs.statement_end_offset = -1 OR qs.statement_end_offset < qs.statement_start_offset
-                                THEN (DATALENGTH(st.text) - qs.statement_start_offset) / 2 + 1
-                            ELSE (qs.statement_end_offset - qs.statement_start_offset) / 2 + 1
-                        END
-                    ) AS query_text
-                FROM sys.dm_exec_query_stats qs
-                CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
-                WHERE st.dbid = DB_ID()
-                ORDER BY
-                    qs.total_worker_time DESC,
-                    qs.total_logical_reads DESC,
-                    qs.execution_count DESC
-            """;
+            SELECT TOP (10)
+                COALESCE(CONVERT(varchar(34), qs.query_hash, 1), N'0x0') AS query_hash,
+                qs.execution_count,
+                CONVERT(decimal(19,2), qs.total_worker_time / 1000.0) AS total_cpu_ms,
+                CONVERT(decimal(19,2), CASE WHEN qs.execution_count = 0 THEN 0 ELSE (qs.total_worker_time * 1.0 / qs.execution_count) / 1000.0 END) AS average_cpu_ms,
+                CONVERT(decimal(19,2), qs.total_elapsed_time / 1000.0) AS total_duration_ms,
+                CONVERT(decimal(19,2), CASE WHEN qs.execution_count = 0 THEN 0 ELSE (qs.total_elapsed_time * 1.0 / qs.execution_count) / 1000.0 END) AS average_duration_ms,
+                qs.total_logical_reads,
+                qs.total_logical_writes,
+                qs.last_execution_time AS last_execution_utc,
+                SUBSTRING(
+                    st.text,
+                    (qs.statement_start_offset / 2) + 1,
+                    CASE
+                        WHEN qs.statement_end_offset = -1 OR qs.statement_end_offset < qs.statement_start_offset
+                            THEN (DATALENGTH(st.text) - qs.statement_start_offset) / 2 + 1
+                        ELSE (qs.statement_end_offset - qs.statement_start_offset) / 2 + 1
+                    END
+                ) AS query_text
+            FROM sys.dm_exec_query_stats qs
+            CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+            WHERE st.dbid = DB_ID()
+            ORDER BY
+                qs.total_worker_time DESC,
+                qs.total_logical_reads DESC,
+                qs.execution_count DESC
+        """;
 
         return await ReadListAsync(connection, sql,
             reader => new ResourceIntensiveQueryInfo(
@@ -932,7 +942,6 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.NullableDateTimeOffset(reader, "last_execution_utc"),
                 NormalizeQueryText(SqlRead.String(reader, "query_text"))),
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<IReadOnlyList<WaitStatInfo>> ReadTopWaitStatsAsync(
@@ -945,55 +954,55 @@ public sealed class SqlServerSnapshotCollector
         }
 
         const string sql = """
-                SELECT TOP (12)
-                    ws.wait_type,
-                    ws.waiting_tasks_count,
-                    CONVERT(decimal(19,2), ws.wait_time_ms / 1000.0) AS wait_time_seconds,
-                    CONVERT(decimal(19,2), (ws.wait_time_ms - ws.signal_wait_time_ms) / 1000.0) AS resource_wait_seconds,
-                    CONVERT(decimal(19,2), ws.signal_wait_time_ms / 1000.0) AS signal_wait_seconds,
-                    CONVERT(decimal(19,2), CASE WHEN ws.waiting_tasks_count = 0 THEN 0 ELSE ws.wait_time_ms * 1.0 / ws.waiting_tasks_count END) AS avg_wait_ms,
-                    CASE
-                        WHEN ws.wait_type LIKE 'LCK[_]%' THEN 'Locking'
-                        WHEN ws.wait_type LIKE 'PAGEIOLATCH[_]%' OR ws.wait_type LIKE 'IO[_]%' THEN 'I/O'
-                        WHEN ws.wait_type LIKE 'CX%' THEN 'Parallelism'
-                        WHEN ws.wait_type LIKE 'RESOURCE[_]%' OR ws.wait_type LIKE 'MEMORY[_]%' THEN 'Memory'
-                        WHEN ws.wait_type LIKE 'SOS[_]%' THEN 'CPU/Scheduler'
-                        WHEN ws.wait_type LIKE 'ASYNC[_]NETWORK[_]IO' THEN 'Network'
-                        ELSE 'Other'
-                    END AS wait_category
-                FROM sys.dm_os_wait_stats ws
-                WHERE ws.waiting_tasks_count > 0
-                  AND ws.wait_time_ms > 0
-                  AND ws.wait_type NOT IN
-                  (
-                      N'BROKER_EVENTHANDLER', N'BROKER_RECEIVE_WAITFOR', N'BROKER_TASK_STOP',
-                      N'BROKER_TO_FLUSH', N'BROKER_TRANSMITTER', N'CHECKPOINT_QUEUE',
-                      N'CHKPT', N'CLR_AUTO_EVENT', N'CLR_MANUAL_EVENT', N'CLR_SEMAPHORE',
-                      N'DBMIRROR_DBM_EVENT', N'DBMIRROR_EVENTS_QUEUE', N'DBMIRROR_WORKER_QUEUE',
-                      N'DBMIRRORING_CMD', N'DIRTY_PAGE_POLL', N'DISPATCHER_QUEUE_SEMAPHORE',
-                      N'EXECSYNC', N'FSAGENT', N'FT_IFTS_SCHEDULER_IDLE_WAIT', N'FT_IFTSHC_MUTEX',
-                      N'HADR_CLUSAPI_CALL', N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',
-                      N'HADR_LOGCAPTURE_WAIT', N'HADR_NOTIFICATION_DEQUEUE',
-                      N'HADR_TIMER_TASK', N'HADR_WORK_QUEUE', N'KSOURCE_WAKEUP',
-                      N'LAZYWRITER_SLEEP', N'LOGMGR_QUEUE', N'MEMORY_ALLOCATION_EXT',
-                      N'ONDEMAND_TASK_QUEUE', N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',
-                      N'PREEMPTIVE_XE_GETTARGETSTATE', N'PWAIT_ALL_COMPONENTS_INITIALIZED',
-                      N'PWAIT_DIRECTLOGCONSUMER_GETNEXT', N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
-                      N'QDS_ASYNC_QUEUE', N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',
-                      N'QDS_SHUTDOWN_QUEUE', N'REQUEST_FOR_DEADLOCK_SEARCH', N'RESOURCE_QUEUE',
-                      N'SERVER_IDLE_CHECK', N'SLEEP_BPOOL_FLUSH', N'SLEEP_DBSTARTUP',
-                      N'SLEEP_DCOMSTARTUP', N'SLEEP_MASTERDBREADY', N'SLEEP_MASTERMDREADY',
-                      N'SLEEP_MASTERUPGRADED', N'SLEEP_MSDBSTARTUP', N'SLEEP_SYSTEMTASK',
-                      N'SLEEP_TASK', N'SLEEP_TEMPDBSTARTUP', N'SNI_HTTP_ACCEPT',
-                      N'SP_SERVER_DIAGNOSTICS_SLEEP', N'SQLTRACE_BUFFER_FLUSH',
-                      N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP', N'SQLTRACE_WAIT_ENTRIES',
-                      N'WAIT_FOR_RESULTS', N'WAITFOR', N'WAITFOR_TASKSHUTDOWN',
-                      N'WAIT_XTP_HOST_WAIT', N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG',
-                      N'WAIT_XTP_CKPT_CLOSE', N'XE_DISPATCHER_JOIN', N'XE_DISPATCHER_WAIT',
-                      N'XE_TIMER_EVENT'
-                  )
-                ORDER BY ws.wait_time_ms DESC
-            """;
+            SELECT TOP (12)
+                ws.wait_type,
+                ws.waiting_tasks_count,
+                CONVERT(decimal(19,2), ws.wait_time_ms / 1000.0) AS wait_time_seconds,
+                CONVERT(decimal(19,2), (ws.wait_time_ms - ws.signal_wait_time_ms) / 1000.0) AS resource_wait_seconds,
+                CONVERT(decimal(19,2), ws.signal_wait_time_ms / 1000.0) AS signal_wait_seconds,
+                CONVERT(decimal(19,2), CASE WHEN ws.waiting_tasks_count = 0 THEN 0 ELSE ws.wait_time_ms * 1.0 / ws.waiting_tasks_count END) AS avg_wait_ms,
+                CASE
+                    WHEN ws.wait_type LIKE 'LCK[_]%' THEN 'Locking'
+                    WHEN ws.wait_type LIKE 'PAGEIOLATCH[_]%' OR ws.wait_type LIKE 'IO[_]%' THEN 'I/O'
+                    WHEN ws.wait_type LIKE 'CX%' THEN 'Parallelism'
+                    WHEN ws.wait_type LIKE 'RESOURCE[_]%' OR ws.wait_type LIKE 'MEMORY[_]%' THEN 'Memory'
+                    WHEN ws.wait_type LIKE 'SOS[_]%' THEN 'CPU/Scheduler'
+                    WHEN ws.wait_type LIKE 'ASYNC[_]NETWORK[_]IO' THEN 'Network'
+                    ELSE 'Other'
+                END AS wait_category
+            FROM sys.dm_os_wait_stats ws
+            WHERE ws.waiting_tasks_count > 0
+              AND ws.wait_time_ms > 0
+              AND ws.wait_type NOT IN
+              (
+                  N'BROKER_EVENTHANDLER', N'BROKER_RECEIVE_WAITFOR', N'BROKER_TASK_STOP',
+                  N'BROKER_TO_FLUSH', N'BROKER_TRANSMITTER', N'CHECKPOINT_QUEUE',
+                  N'CHKPT', N'CLR_AUTO_EVENT', N'CLR_MANUAL_EVENT', N'CLR_SEMAPHORE',
+                  N'DBMIRROR_DBM_EVENT', N'DBMIRROR_EVENTS_QUEUE', N'DBMIRROR_WORKER_QUEUE',
+                  N'DBMIRRORING_CMD', N'DIRTY_PAGE_POLL', N'DISPATCHER_QUEUE_SEMAPHORE',
+                  N'EXECSYNC', N'FSAGENT', N'FT_IFTS_SCHEDULER_IDLE_WAIT', N'FT_IFTSHC_MUTEX',
+                  N'HADR_CLUSAPI_CALL', N'HADR_FILESTREAM_IOMGR_IOCOMPLETION',
+                  N'HADR_LOGCAPTURE_WAIT', N'HADR_NOTIFICATION_DEQUEUE',
+                  N'HADR_TIMER_TASK', N'HADR_WORK_QUEUE', N'KSOURCE_WAKEUP',
+                  N'LAZYWRITER_SLEEP', N'LOGMGR_QUEUE', N'MEMORY_ALLOCATION_EXT',
+                  N'ONDEMAND_TASK_QUEUE', N'PREEMPTIVE_OS_FLUSHFILEBUFFERS',
+                  N'PREEMPTIVE_XE_GETTARGETSTATE', N'PWAIT_ALL_COMPONENTS_INITIALIZED',
+                  N'PWAIT_DIRECTLOGCONSUMER_GETNEXT', N'QDS_PERSIST_TASK_MAIN_LOOP_SLEEP',
+                  N'QDS_ASYNC_QUEUE', N'QDS_CLEANUP_STALE_QUERIES_TASK_MAIN_LOOP_SLEEP',
+                  N'QDS_SHUTDOWN_QUEUE', N'REQUEST_FOR_DEADLOCK_SEARCH', N'RESOURCE_QUEUE',
+                  N'SERVER_IDLE_CHECK', N'SLEEP_BPOOL_FLUSH', N'SLEEP_DBSTARTUP',
+                  N'SLEEP_DCOMSTARTUP', N'SLEEP_MASTERDBREADY', N'SLEEP_MASTERMDREADY',
+                  N'SLEEP_MASTERUPGRADED', N'SLEEP_MSDBSTARTUP', N'SLEEP_SYSTEMTASK',
+                  N'SLEEP_TASK', N'SLEEP_TEMPDBSTARTUP', N'SNI_HTTP_ACCEPT',
+                  N'SP_SERVER_DIAGNOSTICS_SLEEP', N'SQLTRACE_BUFFER_FLUSH',
+                  N'SQLTRACE_INCREMENTAL_FLUSH_SLEEP', N'SQLTRACE_WAIT_ENTRIES',
+                  N'WAIT_FOR_RESULTS', N'WAITFOR', N'WAITFOR_TASKSHUTDOWN',
+                  N'WAIT_XTP_HOST_WAIT', N'WAIT_XTP_OFFLINE_CKPT_NEW_LOG',
+                  N'WAIT_XTP_CKPT_CLOSE', N'XE_DISPATCHER_JOIN', N'XE_DISPATCHER_WAIT',
+                  N'XE_TIMER_EVENT'
+              )
+            ORDER BY ws.wait_time_ms DESC
+        """;
 
         return await ReadListAsync(connection, sql,
             reader => new WaitStatInfo(
@@ -1005,7 +1014,6 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Decimal(reader, "avg_wait_ms"),
                 SqlRead.String(reader, "wait_category")),
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<IReadOnlyList<QueryStoreRegressionInfo>> ReadQueryStoreRegressionsAsync(
@@ -1013,65 +1021,65 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken)
     {
         if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false)
-    || !await IsQueryStoreEnabledAsync(connection, cancellationToken).ConfigureAwait(false))
+            || !await IsQueryStoreEnabledAsync(connection, cancellationToken).ConfigureAwait(false))
         {
             return [];
         }
 
         const string sql = """
-                WITH runtime_data AS
-                (
-                    SELECT
-                        q.query_id,
-                        qt.query_sql_text,
-                        rsi.start_time,
-                        rs.count_executions,
-                        rs.avg_duration
-                    FROM sys.query_store_query q
-                    INNER JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
-                    INNER JOIN sys.query_store_plan p ON p.query_id = q.query_id
-                    INNER JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id
-                    INNER JOIN sys.query_store_runtime_stats_interval rsi ON rsi.runtime_stats_interval_id = rs.runtime_stats_interval_id
-                ),
-                baseline AS
-                (
-                    SELECT
-                        query_id,
-                        MAX(query_sql_text) AS query_sql_text,
-                        SUM(count_executions) AS executions,
-                        SUM(avg_duration * count_executions) / NULLIF(SUM(count_executions), 0) AS weighted_avg_duration
-                    FROM runtime_data
-                    WHERE start_time >= DATEADD(day, -14, SYSUTCDATETIME())
-                      AND start_time < DATEADD(day, -3, SYSUTCDATETIME())
-                    GROUP BY query_id
-                ),
-                recent AS
-                (
-                    SELECT
-                        query_id,
-                        SUM(count_executions) AS executions,
-                        SUM(avg_duration * count_executions) / NULLIF(SUM(count_executions), 0) AS weighted_avg_duration,
-                        MAX(start_time) AS last_interval_start
-                    FROM runtime_data
-                    WHERE start_time >= DATEADD(day, -3, SYSUTCDATETIME())
-                    GROUP BY query_id
-                )
-                SELECT TOP (10)
-                    b.query_id,
-                    CONVERT(decimal(19,2), b.weighted_avg_duration / 1000.0) AS baseline_avg_ms,
-                    CONVERT(decimal(19,2), r.weighted_avg_duration / 1000.0) AS recent_avg_ms,
-                    CONVERT(decimal(19,2), r.weighted_avg_duration / NULLIF(b.weighted_avg_duration, 0)) AS regression_ratio,
-                    r.executions AS recent_executions,
-                    r.last_interval_start AS last_execution_utc,
-                    b.query_sql_text
-                FROM baseline b
-                INNER JOIN recent r ON r.query_id = b.query_id
-                WHERE b.executions >= 5
-                  AND r.executions >= 5
-                  AND r.weighted_avg_duration > b.weighted_avg_duration
-                  AND r.weighted_avg_duration >= b.weighted_avg_duration * 1.5
-                ORDER BY regression_ratio DESC, r.executions DESC
-            """;
+            WITH runtime_data AS
+            (
+                SELECT
+                    q.query_id,
+                    qt.query_sql_text,
+                    rsi.start_time,
+                    rs.count_executions,
+                    rs.avg_duration
+                FROM sys.query_store_query q
+                INNER JOIN sys.query_store_query_text qt ON qt.query_text_id = q.query_text_id
+                INNER JOIN sys.query_store_plan p ON p.query_id = q.query_id
+                INNER JOIN sys.query_store_runtime_stats rs ON rs.plan_id = p.plan_id
+                INNER JOIN sys.query_store_runtime_stats_interval rsi ON rsi.runtime_stats_interval_id = rs.runtime_stats_interval_id
+            ),
+            baseline AS
+            (
+                SELECT
+                    query_id,
+                    MAX(query_sql_text) AS query_sql_text,
+                    SUM(count_executions) AS executions,
+                    SUM(avg_duration * count_executions) / NULLIF(SUM(count_executions), 0) AS weighted_avg_duration
+                FROM runtime_data
+                WHERE start_time >= DATEADD(day, -14, SYSUTCDATETIME())
+                  AND start_time < DATEADD(day, -3, SYSUTCDATETIME())
+                GROUP BY query_id
+            ),
+            recent AS
+            (
+                SELECT
+                    query_id,
+                    SUM(count_executions) AS executions,
+                    SUM(avg_duration * count_executions) / NULLIF(SUM(count_executions), 0) AS weighted_avg_duration,
+                    MAX(start_time) AS last_interval_start
+                FROM runtime_data
+                WHERE start_time >= DATEADD(day, -3, SYSUTCDATETIME())
+                GROUP BY query_id
+            )
+            SELECT TOP (10)
+                b.query_id,
+                CONVERT(decimal(19,2), b.weighted_avg_duration / 1000.0) AS baseline_avg_ms,
+                CONVERT(decimal(19,2), r.weighted_avg_duration / 1000.0) AS recent_avg_ms,
+                CONVERT(decimal(19,2), r.weighted_avg_duration / NULLIF(b.weighted_avg_duration, 0)) AS regression_ratio,
+                r.executions AS recent_executions,
+                r.last_interval_start AS last_execution_utc,
+                b.query_sql_text
+            FROM baseline b
+            INNER JOIN recent r ON r.query_id = b.query_id
+            WHERE b.executions >= 5
+              AND r.executions >= 5
+              AND r.weighted_avg_duration > b.weighted_avg_duration
+              AND r.weighted_avg_duration >= b.weighted_avg_duration * 1.5
+            ORDER BY regression_ratio DESC, r.executions DESC
+        """;
 
         return await ReadListAsync(connection, sql,
             reader => new QueryStoreRegressionInfo(
@@ -1083,7 +1091,6 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.NullableDateTimeOffset(reader, "last_execution_utc"),
                 NormalizeQueryText(SqlRead.String(reader, "query_sql_text"))),
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<IReadOnlyList<BlockingSessionInfo>> ReadActiveBlockingSessionsAsync(
@@ -1096,27 +1103,27 @@ public sealed class SqlServerSnapshotCollector
         }
 
         const string sql = """
-                SELECT TOP (10)
-                    r.blocking_session_id,
-                    r.session_id AS blocked_session_id,
-                    COALESCE(r.wait_type, N'') AS wait_type,
-                    COALESCE(r.wait_time, 0) AS wait_time_ms,
-                    COALESCE(r.wait_resource, N'') AS wait_resource,
-                    SUBSTRING(
-                        t.text,
-                        (r.statement_start_offset / 2) + 1,
-                        CASE
-                            WHEN r.statement_end_offset = -1 OR r.statement_end_offset < r.statement_start_offset
-                                THEN (DATALENGTH(t.text) - r.statement_start_offset) / 2 + 1
-                            ELSE (r.statement_end_offset - r.statement_start_offset) / 2 + 1
-                        END
-                    ) AS query_text
-                FROM sys.dm_exec_requests r
-                CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
-                WHERE r.blocking_session_id > 0
-                  AND r.database_id = DB_ID()
-                ORDER BY r.wait_time DESC
-            """;
+            SELECT TOP (10)
+                r.blocking_session_id,
+                r.session_id AS blocked_session_id,
+                COALESCE(r.wait_type, N'') AS wait_type,
+                COALESCE(r.wait_time, 0) AS wait_time_ms,
+                COALESCE(r.wait_resource, N'') AS wait_resource,
+                SUBSTRING(
+                    t.text,
+                    (r.statement_start_offset / 2) + 1,
+                    CASE
+                        WHEN r.statement_end_offset = -1 OR r.statement_end_offset < r.statement_start_offset
+                            THEN (DATALENGTH(t.text) - r.statement_start_offset) / 2 + 1
+                        ELSE (r.statement_end_offset - r.statement_start_offset) / 2 + 1
+                    END
+                ) AS query_text
+            FROM sys.dm_exec_requests r
+            CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t
+            WHERE r.blocking_session_id > 0
+              AND r.database_id = DB_ID()
+            ORDER BY r.wait_time DESC
+        """;
 
         return await ReadListAsync(connection, sql,
             reader => new BlockingSessionInfo(
@@ -1127,7 +1134,6 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.String(reader, "wait_resource"),
                 NormalizeQueryText(SqlRead.String(reader, "query_text"))),
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<DeadlockSummaryInfo?> ReadDeadlockSummaryAsync(
@@ -1140,26 +1146,26 @@ public sealed class SqlServerSnapshotCollector
         }
 
         const string sql = """
-                WITH deadlocks AS
-                (
-                    SELECT
-                        TRY_CAST(event_data.value('(@timestamp)[1]', 'datetime2') AS datetime2) AS event_time
-                    FROM
-                    (
-                        SELECT TRY_CAST(target_data AS xml) AS target_data
-                        FROM sys.dm_xe_session_targets xt
-                        INNER JOIN sys.dm_xe_sessions xs ON xs.address = xt.event_session_address
-                        WHERE xs.name = N'system_health'
-                          AND xt.target_name = N'ring_buffer'
-                    ) src
-                    CROSS APPLY src.target_data.nodes('/RingBufferTarget/event[@name="xml_deadlock_report"]') x(event_data)
-                )
+            WITH deadlocks AS
+            (
                 SELECT
-                    COUNT(*) AS deadlock_count,
-                    MAX(event_time) AS last_deadlock_utc
-                FROM deadlocks
-                WHERE event_time >= DATEADD(day, -1, SYSUTCDATETIME())
-            """;
+                    TRY_CAST(event_data.value('(@timestamp)[1]', 'datetime2') AS datetime2) AS event_time
+                FROM
+                (
+                    SELECT TRY_CAST(target_data AS xml) AS target_data
+                    FROM sys.dm_xe_session_targets xt
+                    INNER JOIN sys.dm_xe_sessions xs ON xs.address = xt.event_session_address
+                    WHERE xs.name = N'system_health'
+                      AND xt.target_name = N'ring_buffer'
+                ) src
+                CROSS APPLY src.target_data.nodes('/RingBufferTarget/event[@name="xml_deadlock_report"]') x(event_data)
+            )
+            SELECT
+                COUNT(*) AS deadlock_count,
+                MAX(event_time) AS last_deadlock_utc
+            FROM deadlocks
+            WHERE event_time >= DATEADD(day, -1, SYSUTCDATETIME())
+        """;
 
         await using var command = new SqlCommand(sql, connection)
         {
@@ -1173,9 +1179,8 @@ public sealed class SqlServerSnapshotCollector
         }
 
         return new DeadlockSummaryInfo(
-            SqlRead.Long(reader, "deadlock_count"),
+            SqlRead.Int(reader, "deadlock_count"),
             SqlRead.NullableDateTimeOffset(reader, "last_deadlock_utc"));
-
     }
 
     private static async Task<IReadOnlyList<MissingIndexSignalInfo>> ReadMissingIndexSignalsAsync(
@@ -1188,38 +1193,38 @@ public sealed class SqlServerSnapshotCollector
         }
 
         const string sql = """
-                SELECT TOP (15)
-                    mid.object_id,
-                    s.name AS schema_name,
-                    o.name AS table_name,
-                    COALESCE(mid.equality_columns, N'') AS equality_columns,
-                    COALESCE(mid.inequality_columns, N'') AS inequality_columns,
-                    COALESCE(mid.included_columns, N'') AS included_columns,
-                    migs.user_seeks,
-                    migs.user_scans,
-                    CONVERT(decimal(19,2), migs.avg_total_user_cost) AS avg_total_user_cost,
-                    CONVERT(decimal(19,2), migs.avg_user_impact) AS avg_user_impact,
-                    CONVERT(decimal(19,2), migs.avg_total_user_cost * (migs.avg_user_impact / 100.0) * (migs.user_seeks + migs.user_scans)) AS estimated_benefit,
-                    COALESCE(idx.existing_index_count, 0) AS existing_index_count
-                FROM sys.dm_db_missing_index_group_stats migs
-                INNER JOIN sys.dm_db_missing_index_groups mig ON mig.index_group_handle = migs.group_handle
-                INNER JOIN sys.dm_db_missing_index_details mid ON mid.index_handle = mig.index_handle
-                INNER JOIN sys.objects o ON o.object_id = mid.object_id
-                INNER JOIN sys.schemas s ON s.schema_id = o.schema_id
-                OUTER APPLY
-                (
-                    SELECT COUNT(*) AS existing_index_count
-                    FROM sys.indexes i
-                    WHERE i.object_id = mid.object_id
-                      AND i.index_id > 0
-                      AND i.is_hypothetical = 0
-                ) idx
-                WHERE mid.database_id = DB_ID()
-                  AND o.type = 'U'
-                  AND (migs.user_seeks + migs.user_scans) >= 100
-                  AND migs.avg_user_impact >= 70
-                ORDER BY estimated_benefit DESC
-            """;
+            SELECT TOP (15)
+                mid.object_id,
+                s.name AS schema_name,
+                o.name AS table_name,
+                COALESCE(mid.equality_columns, N'') AS equality_columns,
+                COALESCE(mid.inequality_columns, N'') AS inequality_columns,
+                COALESCE(mid.included_columns, N'') AS included_columns,
+                migs.user_seeks,
+                migs.user_scans,
+                CONVERT(decimal(19,2), migs.avg_total_user_cost) AS avg_total_user_cost,
+                CONVERT(decimal(19,2), migs.avg_user_impact) AS avg_user_impact,
+                CONVERT(decimal(19,2), migs.avg_total_user_cost * (migs.avg_user_impact / 100.0) * (migs.user_seeks + migs.user_scans)) AS estimated_benefit,
+                COALESCE(idx.existing_index_count, 0) AS existing_index_count
+            FROM sys.dm_db_missing_index_group_stats migs
+            INNER JOIN sys.dm_db_missing_index_groups mig ON mig.index_group_handle = migs.group_handle
+            INNER JOIN sys.dm_db_missing_index_details mid ON mid.index_handle = mig.index_handle
+            INNER JOIN sys.objects o ON o.object_id = mid.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = o.schema_id
+            OUTER APPLY
+            (
+                SELECT COUNT(*) AS existing_index_count
+                FROM sys.indexes i
+                WHERE i.object_id = mid.object_id
+                  AND i.index_id > 0
+                  AND i.is_hypothetical = 0
+            ) idx
+            WHERE mid.database_id = DB_ID()
+              AND o.type = 'U'
+              AND (migs.user_seeks + migs.user_scans) >= 100
+              AND migs.avg_user_impact >= 70
+            ORDER BY estimated_benefit DESC
+        """;
 
         return await ReadListAsync(connection, sql,
             reader =>
@@ -1245,7 +1250,6 @@ public sealed class SqlServerSnapshotCollector
                     guardrailNote);
             },
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<LogHealthInfo?> ReadLogHealthAsync(
@@ -1253,29 +1257,29 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken)
     {
         const string sql = """
-                SELECT
-                    CONVERT(decimal(19,2), ls.total_log_size_mb) AS total_log_size_mb,
-                    CONVERT(decimal(19,2), ls.used_log_space_mb) AS used_log_size_mb,
-                    CONVERT(decimal(19,2), ls.used_log_space_in_percent) AS used_log_percent,
-                    COALESCE(vlf.vlf_count, 0) AS vlf_count,
-                    COALESCE(tx.longest_active_tx_minutes, 0) AS longest_active_tx_minutes,
-                    COALESCE(d.log_reuse_wait_desc, N'UNKNOWN') AS log_reuse_wait_desc
-                FROM sys.databases d
-                CROSS APPLY sys.dm_db_log_space_usage ls
-                OUTER APPLY
-                (
-                    SELECT COUNT(*) AS vlf_count
-                    FROM sys.dm_db_log_info(DB_ID())
-                ) vlf
-                OUTER APPLY
-                (
-                    SELECT MAX(DATEDIFF(minute, at.transaction_begin_time, SYSUTCDATETIME())) AS longest_active_tx_minutes
-                    FROM sys.dm_tran_database_transactions dt
-                    INNER JOIN sys.dm_tran_active_transactions at ON at.transaction_id = dt.transaction_id
-                    WHERE dt.database_id = DB_ID()
-                ) tx
-                WHERE d.database_id = DB_ID()
-            """;
+            SELECT
+                CONVERT(decimal(19,2), ls.total_log_size_mb) AS total_log_size_mb,
+                CONVERT(decimal(19,2), ls.used_log_space_mb) AS used_log_size_mb,
+                CONVERT(decimal(19,2), ls.used_log_space_in_percent) AS used_log_percent,
+                COALESCE(vlf.vlf_count, 0) AS vlf_count,
+                COALESCE(tx.longest_active_tx_minutes, 0) AS longest_active_tx_minutes,
+                COALESCE(d.log_reuse_wait_desc, N'UNKNOWN') AS log_reuse_wait_desc
+            FROM sys.databases d
+            CROSS APPLY sys.dm_db_log_space_usage ls
+            OUTER APPLY
+            (
+                SELECT COUNT(*) AS vlf_count
+                FROM sys.dm_db_log_info(DB_ID())
+            ) vlf
+            OUTER APPLY
+            (
+                SELECT MAX(DATEDIFF(minute, at.transaction_begin_time, SYSUTCDATETIME())) AS longest_active_tx_minutes
+                FROM sys.dm_tran_database_transactions dt
+                INNER JOIN sys.dm_tran_active_transactions at ON at.transaction_id = dt.transaction_id
+                WHERE dt.database_id = DB_ID()
+            ) tx
+            WHERE d.database_id = DB_ID()
+        """;
 
         await using var command = new SqlCommand(sql, connection)
         {
@@ -1295,7 +1299,6 @@ public sealed class SqlServerSnapshotCollector
             SqlRead.Int(reader, "vlf_count"),
             SqlRead.Long(reader, "longest_active_tx_minutes"),
             SqlRead.String(reader, "log_reuse_wait_desc"));
-
     }
 
     private static async Task<TempDbPressureInfo?> ReadTempDbPressureAsync(
@@ -1303,13 +1306,13 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken)
     {
         const string sql = """
-                SELECT
-                    CONVERT(decimal(19,2), SUM(version_store_reserved_page_count) * 8.0 / 1024.0) AS version_store_mb,
-                    CONVERT(decimal(19,2), SUM(user_object_reserved_page_count) * 8.0 / 1024.0) AS user_object_mb,
-                    CONVERT(decimal(19,2), SUM(internal_object_reserved_page_count) * 8.0 / 1024.0) AS internal_object_mb,
-                    CONVERT(decimal(19,2), SUM(unallocated_extent_page_count) * 8.0 / 1024.0) AS unallocated_mb
-                FROM tempdb.sys.dm_db_file_space_usage
-            """;
+            SELECT
+                CONVERT(decimal(19,2), SUM(version_store_reserved_page_count) * 8.0 / 1024.0) AS version_store_mb,
+                CONVERT(decimal(19,2), SUM(user_object_reserved_page_count) * 8.0 / 1024.0) AS user_object_mb,
+                CONVERT(decimal(19,2), SUM(internal_object_reserved_page_count) * 8.0 / 1024.0) AS internal_object_mb,
+                CONVERT(decimal(19,2), SUM(unallocated_extent_page_count) * 8.0 / 1024.0) AS unallocated_mb
+            FROM tempdb.sys.dm_db_file_space_usage
+        """;
 
         await using var command = new SqlCommand(sql, connection)
         {
@@ -1327,7 +1330,6 @@ public sealed class SqlServerSnapshotCollector
             SqlRead.Decimal(reader, "user_object_mb"),
             SqlRead.Decimal(reader, "internal_object_mb"),
             SqlRead.Decimal(reader, "unallocated_mb"));
-
     }
 
     private static async Task<IReadOnlyList<FileGrowthHealthInfo>> ReadFileGrowthHealthAsync(
@@ -1335,24 +1337,24 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken)
     {
         const string sql = """
-                SELECT
-                    df.file_id,
-                    df.name AS logical_name,
-                    df.type_desc AS file_type,
-                    df.physical_name,
-                    CONVERT(decimal(19,2), df.size * 8.0 / 1024.0) AS size_mb,
-                    df.is_percent_growth,
-                    CONVERT(decimal(19,2), CASE
-                        WHEN df.is_percent_growth = 1 THEN df.growth
-                        ELSE df.growth * 8.0 / 1024.0
-                    END) AS growth_value,
-                    CONVERT(decimal(19,2), CASE
-                        WHEN df.max_size = -1 THEN NULL
-                        ELSE df.max_size * 8.0 / 1024.0
-                    END) AS max_size_mb
-                FROM sys.database_files df
-                ORDER BY df.type, df.file_id
-            """;
+            SELECT
+                df.file_id,
+                df.name AS logical_name,
+                df.type_desc AS file_type,
+                df.physical_name,
+                CONVERT(decimal(19,2), df.size * 8.0 / 1024.0) AS size_mb,
+                df.is_percent_growth,
+                CONVERT(decimal(19,2), CASE
+                    WHEN df.is_percent_growth = 1 THEN df.growth
+                    ELSE df.growth * 8.0 / 1024.0
+                END) AS growth_value,
+                CONVERT(decimal(19,2), CASE
+                    WHEN df.max_size = -1 THEN NULL
+                    ELSE df.max_size * 8.0 / 1024.0
+                END) AS max_size_mb
+            FROM sys.database_files df
+            ORDER BY df.type, df.file_id
+        """;
 
         return await ReadListAsync(connection, sql,
             reader =>
@@ -1386,7 +1388,6 @@ public sealed class SqlServerSnapshotCollector
                     advisory);
             },
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<BackupPostureInfo?> ReadBackupPostureAsync(
@@ -1394,16 +1395,16 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken)
     {
         const string sql = """
-                SELECT
-                    d.recovery_model_desc,
-                    MAX(CASE WHEN b.type = 'D' THEN b.backup_finish_date END) AS last_full_backup_utc,
-                    MAX(CASE WHEN b.type = 'I' THEN b.backup_finish_date END) AS last_diff_backup_utc,
-                    MAX(CASE WHEN b.type = 'L' THEN b.backup_finish_date END) AS last_log_backup_utc
-                FROM sys.databases d
-                LEFT JOIN msdb.dbo.backupset b ON b.database_name = d.name
-                WHERE d.database_id = DB_ID()
-                GROUP BY d.recovery_model_desc
-            """;
+            SELECT
+                d.recovery_model_desc,
+                MAX(CASE WHEN b.type = 'D' THEN b.backup_finish_date END) AS last_full_backup_utc,
+                MAX(CASE WHEN b.type = 'I' THEN b.backup_finish_date END) AS last_diff_backup_utc,
+                MAX(CASE WHEN b.type = 'L' THEN b.backup_finish_date END) AS last_log_backup_utc
+            FROM sys.databases d
+            LEFT JOIN msdb.dbo.backupset b ON b.database_name = d.name
+            WHERE d.database_id = DB_ID()
+            GROUP BY d.recovery_model_desc
+        """;
 
         await using var command = new SqlCommand(sql, connection)
         {
@@ -1429,7 +1430,6 @@ public sealed class SqlServerSnapshotCollector
             lastFull is null ? null : Convert.ToDecimal((now - lastFull.Value).TotalHours, CultureInfo.InvariantCulture),
             lastDiff is null ? null : Convert.ToDecimal((now - lastDiff.Value).TotalHours, CultureInfo.InvariantCulture),
             lastLog is null ? null : Convert.ToDecimal((now - lastLog.Value).TotalHours, CultureInfo.InvariantCulture));
-
     }
 
     private static async Task<IReadOnlyList<ColumnInfo>> ReadColumnsAsync(
@@ -1490,38 +1490,53 @@ public sealed class SqlServerSnapshotCollector
 
         var results = new List<ColumnNullStats>();
 
-        foreach (var group in nullableByTable)
+        foreach (var chunk in nullableByTable.Chunk(50))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var cols = group.Take(maxColumnsPerTable).ToArray();
-            var first = cols[0];
-            var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
+            var parts = new List<string>();
+            var columnMap = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
 
-            var parts = cols.Select(c =>
-                $"SELECT N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
-                $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+            foreach (var group in chunk)
+            {
+                var cols = group.Take(maxColumnsPerTable).ToArray();
+                var first = cols[0];
+                var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
 
-            var sql = $"SELECT column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
+                foreach (var c in cols)
+                {
+                    var key = $"{first.ObjectId}:{c.ColumnName}";
+                    columnMap[key] = c;
+                    parts.Add($"SELECT {first.ObjectId} AS object_id, N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
+                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+                }
+            }
+
+            if (parts.Count == 0)
+            {
+                continue;
+            }
+
+            var sql = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
 
             await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var colName = reader.GetString(0);
-                var columnInfo = cols.FirstOrDefault(c => string.Equals(c.ColumnName, colName, StringComparison.Ordinal));
-                if (columnInfo is null)
-                {
-                    continue;
-                }
+                var objectId = reader.GetInt32(0);
+                var colName = reader.GetString(1);
+                var key = $"{objectId}:{colName}";
 
-                results.Add(new ColumnNullStats(
-                    first.ObjectId,
-                    first.SchemaName,
-                    first.TableName,
-                    colName,
-                    FormatColumnDataType(columnInfo)));
+                if (columnMap.TryGetValue(key, out var columnInfo))
+                {
+                    results.Add(new ColumnNullStats(
+                        columnInfo.ObjectId,
+                        columnInfo.SchemaName,
+                        columnInfo.TableName,
+                        colName,
+                        FormatColumnDataType(columnInfo)));
+                }
             }
         }
 
@@ -1569,61 +1584,61 @@ public sealed class SqlServerSnapshotCollector
         CancellationToken cancellationToken)
     {
         const string sql = """
-                SELECT TOP (50)
-                    issue_type,
-                    severity,
-                    principal_name,
-                    details
-                FROM
-                (
-                    SELECT
-                        N'OrphanUser' AS issue_type,
-                        N'High' AS severity,
-                        dp.name AS principal_name,
-                        CONCAT(N'Principal exists in database but not at server scope (', dp.type_desc, N').') AS details,
-                        1 AS sort_order
-                    FROM sys.database_principals dp
-                    LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
-                    WHERE dp.type IN ('S', 'U', 'G')
-                      AND dp.name NOT IN (N'dbo', N'guest', N'INFORMATION_SCHEMA', N'sys')
-                      AND dp.sid IS NOT NULL
-                      AND sp.sid IS NULL
+            SELECT TOP (50)
+                issue_type,
+                severity,
+                principal_name,
+                details
+            FROM
+            (
+                SELECT
+                    N'OrphanUser' AS issue_type,
+                    N'High' AS severity,
+                    dp.name AS principal_name,
+                    CONCAT(N'Principal exists in database but not at server scope (', dp.type_desc, N').') AS details,
+                    1 AS sort_order
+                FROM sys.database_principals dp
+                LEFT JOIN sys.server_principals sp ON dp.sid = sp.sid
+                WHERE dp.type IN ('S', 'U', 'G')
+                  AND dp.name NOT IN (N'dbo', N'guest', N'INFORMATION_SCHEMA', N'sys')
+                  AND dp.sid IS NOT NULL
+                  AND sp.sid IS NULL
 
-                    UNION ALL
+                UNION ALL
 
-                    SELECT
-                        N'DbOwnerMembership',
-                        N'Medium',
-                        member_principal.name,
-                        N'Principal is member of db_owner role.',
-                        2
-                    FROM sys.database_role_members drm
-                    INNER JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
-                    INNER JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
-                    WHERE role_principal.name = N'db_owner'
-                      AND member_principal.name <> N'dbo'
+                SELECT
+                    N'DbOwnerMembership',
+                    N'Medium',
+                    member_principal.name,
+                    N'Principal is member of db_owner role.',
+                    2
+                FROM sys.database_role_members drm
+                INNER JOIN sys.database_principals role_principal ON role_principal.principal_id = drm.role_principal_id
+                INNER JOIN sys.database_principals member_principal ON member_principal.principal_id = drm.member_principal_id
+                WHERE role_principal.name = N'db_owner'
+                  AND member_principal.name <> N'dbo'
 
-                    UNION ALL
+                UNION ALL
 
-                    SELECT
-                        N'PublicGrant',
-                        N'Medium',
-                        N'public',
-                        CONCAT(
-                            N'Public has ', perm.permission_name, N' on ',
-                            CASE
-                                WHEN perm.major_id > 0 THEN QUOTENAME(OBJECT_SCHEMA_NAME(perm.major_id)) + N'.' + QUOTENAME(OBJECT_NAME(perm.major_id))
-                                ELSE perm.class_desc
-                            END),
-                        3
-                    FROM sys.database_permissions perm
-                    INNER JOIN sys.database_principals grantee ON grantee.principal_id = perm.grantee_principal_id
-                    WHERE grantee.name = N'public'
-                      AND perm.state IN ('G', 'W')
-                      AND perm.permission_name IN (N'ALTER', N'CONTROL', N'VIEW DEFINITION', N'EXECUTE')
-                ) issues
-                ORDER BY sort_order, principal_name
-            """;
+                SELECT
+                    N'PublicGrant',
+                    N'Medium',
+                    N'public',
+                    CONCAT(
+                        N'Public has ', perm.permission_name, N' on ',
+                        CASE
+                            WHEN perm.major_id > 0 THEN QUOTENAME(OBJECT_SCHEMA_NAME(perm.major_id)) + N'.' + QUOTENAME(OBJECT_NAME(perm.major_id))
+                            ELSE perm.class_desc
+                        END),
+                    3
+                FROM sys.database_permissions perm
+                INNER JOIN sys.database_principals grantee ON grantee.principal_id = perm.grantee_principal_id
+                WHERE grantee.name = N'public'
+                  AND perm.state IN ('G', 'W')
+                  AND perm.permission_name IN (N'ALTER', N'CONTROL', N'VIEW DEFINITION', N'EXECUTE')
+            ) issues
+            ORDER BY sort_order, principal_name
+        """;
 
         return await ReadListAsync(connection, sql,
             reader => new SecurityHygieneIssueInfo(
@@ -1632,7 +1647,6 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.String(reader, "principal_name"),
                 SqlRead.String(reader, "details")),
             cancellationToken).ConfigureAwait(false);
-
     }
 
     private static async Task<bool> IsQueryStoreEnabledAsync(SqlConnection connection, CancellationToken cancellationToken)
