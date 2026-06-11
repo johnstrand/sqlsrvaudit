@@ -905,6 +905,55 @@ public sealed class SqlServerChecksExecutionTests
     }
 
     [Fact]
+    public async Task QueryStoreDisabledCheck_FlagsDisabledState_With10OrMoreTables()
+    {
+        var tables = Enumerable.Range(1, 10).Select(i => new TableInfo(i, "dbo", $"Table{i}", 100, 1m, true, false)).ToList();
+        var context = CreateContext(
+            tables: tables,
+            databaseOptions: new DatabaseOptionsInfo(
+                AutoShrink: false, AutoClose: false,
+                PageVerify: "CHECKSUM", IsRcsiEnabled: true,
+                QueryStoreEnabled: false, QueryStoreState: "OFF"));
+
+        var findings = await ExecuteCheckAsync("DB-005", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Low, finding.Severity);
+    }
+
+    [Fact]
+    public async Task QueryStoreDisabledCheck_NoFinding_WhenEnabled()
+    {
+        var tables = Enumerable.Range(1, 10).Select(i => new TableInfo(i, "dbo", $"Table{i}", 100, 1m, true, false)).ToList();
+        var context = CreateContext(
+            tables: tables,
+            databaseOptions: new DatabaseOptionsInfo(
+                AutoShrink: false, AutoClose: false,
+                PageVerify: "CHECKSUM", IsRcsiEnabled: true,
+                QueryStoreEnabled: true, QueryStoreState: "READ_WRITE"));
+
+        var findings = await ExecuteCheckAsync("DB-005", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task QueryStoreDisabledCheck_NoFinding_WithFewerThan10Tables()
+    {
+        var tables = Enumerable.Range(1, 9).Select(i => new TableInfo(i, "dbo", $"Table{i}", 100, 1m, true, false)).ToList();
+        var context = CreateContext(
+            tables: tables,
+            databaseOptions: new DatabaseOptionsInfo(
+                AutoShrink: false, AutoClose: false,
+                PageVerify: "CHECKSUM", IsRcsiEnabled: true,
+                QueryStoreEnabled: false, QueryStoreState: "OFF"));
+
+        var findings = await ExecuteCheckAsync("DB-005", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
     public async Task QueryStoreReadOnlyCheck_FlagsReadOnlyState()
     {
         var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
