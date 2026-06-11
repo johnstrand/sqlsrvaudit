@@ -1475,38 +1475,53 @@ public sealed class SqlServerSnapshotCollector
 
         var results = new List<ColumnNullStats>();
 
-        foreach (var group in nullableByTable)
+        foreach (var chunk in nullableByTable.Chunk(50))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var cols = group.Take(maxColumnsPerTable).ToArray();
-            var first = cols[0];
-            var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
+            var parts = new List<string>();
+            var columnMap = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
 
-            var parts = cols.Select(c =>
-                $"SELECT N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
-                $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+            foreach (var group in chunk)
+            {
+                var cols = group.Take(maxColumnsPerTable).ToArray();
+                var first = cols[0];
+                var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
 
-            var sql = $"SELECT column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
+                foreach (var c in cols)
+                {
+                    var key = $"{first.ObjectId}:{c.ColumnName}";
+                    columnMap[key] = c;
+                    parts.Add($"SELECT {first.ObjectId} AS object_id, N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
+                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+                }
+            }
+
+            if (parts.Count == 0)
+            {
+                continue;
+            }
+
+            var sql = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
 
             await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
-                var colName = reader.GetString(0);
-                var columnInfo = cols.FirstOrDefault(c => string.Equals(c.ColumnName, colName, StringComparison.Ordinal));
-                if (columnInfo is null)
-                {
-                    continue;
-                }
+                var objectId = reader.GetInt32(0);
+                var colName = reader.GetString(1);
+                var key = $"{objectId}:{colName}";
 
-                results.Add(new ColumnNullStats(
-                    first.ObjectId,
-                    first.SchemaName,
-                    first.TableName,
-                    colName,
-                    FormatColumnDataType(columnInfo)));
+                if (columnMap.TryGetValue(key, out var columnInfo))
+                {
+                    results.Add(new ColumnNullStats(
+                        columnInfo.ObjectId,
+                        columnInfo.SchemaName,
+                        columnInfo.TableName,
+                        colName,
+                        FormatColumnDataType(columnInfo)));
+                }
             }
         }
 
