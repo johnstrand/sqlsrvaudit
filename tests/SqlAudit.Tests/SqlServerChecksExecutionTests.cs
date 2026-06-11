@@ -890,6 +890,21 @@ public sealed class SqlServerChecksExecutionTests
     }
 
     [Fact]
+    public async Task AutoCloseCheck_FlagsAutoCloseEnabled()
+    {
+        var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
+            AutoShrink: false, AutoClose: true,
+            PageVerify: "CHECKSUM", IsRcsiEnabled: true,
+            QueryStoreEnabled: true, QueryStoreState: "READ_WRITE"));
+
+        var findings = await ExecuteCheckAsync("DB-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+        Assert.Contains("AUTO_CLOSE OFF", finding.FixScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task PageVerifyCheck_FlagsNonChecksum()
     {
         var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
