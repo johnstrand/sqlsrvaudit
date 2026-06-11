@@ -4,7 +4,7 @@ namespace SqlAudit.SqlServer;
 
 public static class SqlServerPreflight
 {
-    public static async Task<SqlServerPreflightResult> RunAsync(string connectionString, CancellationToken cancellationToken)
+    public static async Task<SqlServerPreflightResult> RunAsync(string connectionString, CancellationToken cancellationToken, int commandTimeoutSeconds = 30)
     {
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -19,7 +19,7 @@ public static class SqlServerPreflight
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
