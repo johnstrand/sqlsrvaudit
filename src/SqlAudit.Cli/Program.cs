@@ -102,7 +102,7 @@ static async Task<int> RunScanCommandAsync(CliOptions options)
     ScanOutput.PrintRunConfiguration(verbosity, resolved, checks.Count);
 
     using var cts = CreateCancellationTokenSource();
-    await RunPreflightAsync(verbosity, resolved.ConnectionString, cts.Token).ConfigureAwait(false);
+    await RunPreflightAsync(verbosity, resolved, cts.Token).ConfigureAwait(false);
 
     var auditRun = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
     ScanOutput.PrintCollectionWarnings(verbosity, auditRun.Snapshot.CollectionWarnings);
@@ -151,10 +151,10 @@ static CancellationTokenSource CreateCancellationTokenSource()
     return cts;
 }
 
-static async Task RunPreflightAsync(LogVerbosity verbosity, string connectionString, CancellationToken cancellationToken)
+static async Task RunPreflightAsync(LogVerbosity verbosity, EffectiveRunOptions resolved, CancellationToken cancellationToken)
 {
     var stepPreflight = ScanOutput.StartStep(verbosity, 2, 6, "Run connection preflight checks");
-    var preflight = await SqlServerPreflight.RunAsync(connectionString, cancellationToken).ConfigureAwait(false);
+    var preflight = await SqlServerPreflight.RunAsync(resolved.ConnectionString, cancellationToken, resolved.CommandTimeout).ConfigureAwait(false);
     ScanOutput.EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
 }
 
