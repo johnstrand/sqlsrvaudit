@@ -4,6 +4,9 @@ using System.Text.Json.Serialization;
 
 namespace SqlAudit.Reporting;
 
+/// <summary>
+/// Serializes the audit report to a standardized JSON format for programmatic consumption.
+/// </summary>
 public static class JsonReportRenderer
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()

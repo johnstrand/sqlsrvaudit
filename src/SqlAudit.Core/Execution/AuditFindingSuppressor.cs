@@ -2,6 +2,9 @@ using SqlAudit.Core.Models;
 
 namespace SqlAudit.Core.Execution;
 
+/// <summary>
+/// Applies suppression rules to filter out ignored or acceptable findings from the final report.
+/// </summary>
 public static class AuditFindingSuppressor
 {
     public static SuppressionOutcome Apply(
