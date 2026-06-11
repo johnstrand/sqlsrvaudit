@@ -308,6 +308,7 @@ public sealed class SqlServerChecksExecutionTests
         IReadOnlyList<VolumeInfo>? volumeStats = null,
         IReadOnlyList<FailedAgentJobInfo>? failedAgentJobs = null,
         IReadOnlyList<GlobalTraceFlagInfo>? globalTraceFlags = null,
+        IReadOnlyList<SecurityHygieneIssueInfo>? securityHygieneIssues = null,
         TempDbConfigInfo? tempDbConfig = null,
         MemoryPressureInfo? memoryPressure = null,
         PlanCacheInfo? planCache = null,
@@ -352,6 +353,7 @@ public sealed class SqlServerChecksExecutionTests
                 VolumeStats = volumeStats ?? [],
                 FailedAgentJobs = failedAgentJobs ?? [],
                 GlobalTraceFlags = globalTraceFlags ?? [],
+                SecurityHygieneIssues = securityHygieneIssues ?? [],
                 TempDbConfig = tempDbConfig,
                 MemoryPressure = memoryPressure,
                 PlanCache = planCache,
@@ -442,8 +444,8 @@ public sealed class SqlServerChecksExecutionTests
         Assert.All(findings, f => Assert.Equal(AuditSeverity.Info, f.Severity));
         Assert.Contains(findings, f => f.DatabaseObject.Contains("Notes", StringComparison.Ordinal));
         Assert.Contains(findings, f => f.DatabaseObject.Contains("ShippedDate", StringComparison.Ordinal));
-        Assert.Contains(findings, f => f.FixScript.Contains("nvarchar(100) NOT NULL", StringComparison.Ordinal));
-        Assert.Contains(findings, f => f.FixScript.Contains("datetime2(7) NOT NULL", StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.FixScript != null && f.FixScript.Contains("nvarchar(100) NOT NULL", StringComparison.Ordinal));
+        Assert.Contains(findings, f => f.FixScript != null && f.FixScript.Contains("datetime2(7) NOT NULL", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -1050,5 +1052,21 @@ public sealed class SqlServerChecksExecutionTests
             FilterDefinition: null,
             KeySizeBytes: keySizeBytes,
             KeyColumnCount: keyColumnCount);
+    }
+    [Fact]
+    public async Task SecurityHygieneCheck_ReturnsFindings_WhenIssuesExist()
+    {
+        var context = CreateContext(securityHygieneIssues:
+        [
+            new SecurityHygieneIssueInfo("OrphanUser", AuditSeverity.High, "test_user", "Orphaned user detected")
+        ]);
+
+        var findings = await ExecuteCheckAsync("SEC-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("SEC-001-ORPHANUSER-TEST_USER", finding.Id);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+        Assert.Equal("test_user", finding.DatabaseObject);
+        Assert.Contains("Orphaned user detected", finding.Description, StringComparison.Ordinal);
     }
 }

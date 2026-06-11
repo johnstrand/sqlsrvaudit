@@ -15,7 +15,7 @@ The SQL fix scripts it generates are written to your local disk for you to revie
 
 ## What it checks
 
-SqlAudit ships **43 checks in the Quick profile** and **52 in Deep**, spanning:
+SqlAudit ships **44 checks in the Quick profile** and **53 in Deep**, spanning:
 
 - **Keys and constraints** — missing PKs, large heaps, disabled/untrusted FKs, FK type mismatches, FKs without supporting indexes
 - **Index quality** — duplicates, overlapping/redundant indexes, disabled indexes, write-heavy unused indexes, over-wide keys, fill factor anomalies, columnstore opportunities
@@ -38,8 +38,8 @@ SqlAudit ships **43 checks in the Quick profile** and **52 in Deep**, spanning:
 
 ## Profiles
 
-- `deep` (default): full analysis — 52 checks including fragmentation, page density, stale stats, columnstore opportunities, and all advanced DMV-based checks
-- `quick`: 43 checks focused on high-value key/index anti-patterns and operational posture with lower runtime overhead
+- `deep` (default): full analysis — 53 checks including fragmentation, page density, stale stats, columnstore opportunities, and all advanced DMV-based checks
+- `quick`: 44 checks focused on high-value key/index anti-patterns and operational posture with lower runtime overhead
 
 ## Service window policy
 
