@@ -875,6 +875,80 @@ public sealed class SqlServerChecksExecutionTests
     }
 
     [Fact]
+    public async Task DifferentialBackupGapCheck_FlagsMissingDifferentialBackup()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddHours(-48),
+            LastDifferentialBackupUtc: null,
+            LastLogBackupUtc: DateTimeOffset.UtcNow.AddMinutes(-30),
+            FullBackupAgeHours: 48m,
+            DifferentialBackupAgeHours: null,
+            LogBackupAgeHours: 0.5m));
+
+        var findings = await ExecuteCheckAsync("BAK-003", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Low, finding.Severity);
+        Assert.Contains("The last full backup was 48 hours ago", finding.Description, StringComparison.Ordinal);
+        Assert.Contains("never", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DifferentialBackupGapCheck_FlagsOldDifferentialBackup()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddHours(-100),
+            LastDifferentialBackupUtc: DateTimeOffset.UtcNow.AddHours(-80),
+            LastLogBackupUtc: DateTimeOffset.UtcNow.AddMinutes(-30),
+            FullBackupAgeHours: 100m,
+            DifferentialBackupAgeHours: 80m,
+            LogBackupAgeHours: 0.5m));
+
+        var findings = await ExecuteCheckAsync("BAK-003", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Low, finding.Severity);
+        Assert.Contains("The last full backup was 100 hours ago", finding.Description, StringComparison.Ordinal);
+        Assert.Contains("80 hours ago", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DifferentialBackupGapCheck_NoFindingForRecentFullBackup()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddHours(-12),
+            LastDifferentialBackupUtc: null,
+            LastLogBackupUtc: DateTimeOffset.UtcNow.AddMinutes(-30),
+            FullBackupAgeHours: 12m,
+            DifferentialBackupAgeHours: null,
+            LogBackupAgeHours: 0.5m));
+
+        var findings = await ExecuteCheckAsync("BAK-003", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public async Task DifferentialBackupGapCheck_NoFindingForRecentDifferentialBackup()
+    {
+        var context = CreateContext(backupPosture: new BackupPostureInfo(
+            RecoveryModel: "FULL",
+            LastFullBackupUtc: DateTimeOffset.UtcNow.AddHours(-48),
+            LastDifferentialBackupUtc: DateTimeOffset.UtcNow.AddHours(-24),
+            LastLogBackupUtc: DateTimeOffset.UtcNow.AddMinutes(-30),
+            FullBackupAgeHours: 48m,
+            DifferentialBackupAgeHours: 24m,
+            LogBackupAgeHours: 0.5m));
+
+        var findings = await ExecuteCheckAsync("BAK-003", context);
+
+        Assert.Empty(findings);
+    }
+
+    [Fact]
     public async Task AutoShrinkCheck_FlagsAutoShrinkEnabled()
     {
         var context = CreateContext(databaseOptions: new DatabaseOptionsInfo(
