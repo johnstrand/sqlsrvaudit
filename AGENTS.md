@@ -35,7 +35,7 @@ Guidance for LLM/code agents contributing to this repository.
 
 ## Key Architecture Notes
 
-- **Check counts**: Quick profile = 43 checks, Deep profile = 52 checks. `AuditReport.SchemaVersion = "1.5"`.
+- **Check counts**: Quick profile = 44 checks, Deep profile = 53 checks. `AuditReport.SchemaVersion = "1.5"`.
 - **Fix script output**: individual scripts are split into `fixes/no-window/` (safe to apply without downtime) and `fixes/requires-window/` (need a maintenance window). `fixes/all-fixes.sql` is the combined bundle.
 - **Edition-aware fix scripts**: `DatabaseSnapshot.SupportsOnlineIndexOperations` is `true` for Enterprise, Developer, and Azure SQL. Fix scripts for index/table rebuilds use `ONLINE = ON` or `ONLINE = OFF` accordingly.
 - **All CLI console output** goes through `ScanOutput.cs` (Spectre.Console 0.49.1). `Program.cs` never calls `Console.*` directly.
