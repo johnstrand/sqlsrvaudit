@@ -106,9 +106,9 @@ internal sealed class OversizedStringColumnCheck : IHealthCheck
                 FixScript = $"""
                     -- RequiresServiceWindow: true
                     -- Reason: Shrinking column width validates all existing values.
-                    -- TODO: Replace <new_length> with the appropriate maximum length.
+                    -- Replace 256 with the appropriate maximum length if necessary.
                     ALTER TABLE {tableName}
-                    ALTER COLUMN {quotedColumn} {col.DataType}(<new_length>){(col.IsNullable ? " NULL" : " NOT NULL")};
+                    ALTER COLUMN {quotedColumn} {col.DataType}(256){(col.IsNullable ? " NULL" : " NOT NULL")};
                     """,
                 Evidence =
                 [
