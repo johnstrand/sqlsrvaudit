@@ -125,6 +125,27 @@ public sealed class MarkdownReportRendererTests
     }
 
     [Fact]
+    public void Render_ShowsNoTelemetryMessage_WhenTopResourceIntensiveQueriesEmpty()
+    {
+        var report = new AuditReport
+        {
+            ServerName = "server01",
+            DatabaseName = "DbA",
+            Edition = "Developer Edition",
+            ProductVersion = "16.0",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            TopResourceIntensiveQueries = [],
+            Findings = [],
+        };
+
+        var markdown = MarkdownReportRenderer.Render(report);
+
+        Assert.Contains("### Top Resource-Intensive Queries", markdown, StringComparison.Ordinal);
+        Assert.Contains("No query runtime telemetry available.", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("| Query Hash | Executions |", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Render_IncludesExtendedOperationalTelemetrySections()
     {
         var report = new AuditReport
