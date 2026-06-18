@@ -55,6 +55,34 @@ public sealed class HealthCheckRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_ContinuesExecutionAfterCheckFailure()
+    {
+        var failing = new StubCheck(
+            id: "CHK-FAIL",
+            execute: () => throw new InvalidOperationException("boom"));
+
+        var success = new StubCheck(
+            id: "CHK-SUCCESS",
+            execute: () => [CreateFinding("CHK-SUCCESS-1", "[dbo].[Books]")]);
+
+        var runner = new HealthCheckRunner([failing, success]);
+        var result = await runner.RunAsync(CreateContext(), CancellationToken.None);
+
+        Assert.True(success.Executed);
+
+        Assert.Equal(2, result.CheckExecutions.Count);
+        var failExecution = Assert.Single(result.CheckExecutions, e => string.Equals(e.CheckId, "CHK-FAIL", StringComparison.Ordinal));
+        Assert.Equal(CheckExecutionStatus.Failed, failExecution.Status);
+
+        var successExecution = Assert.Single(result.CheckExecutions, e => string.Equals(e.CheckId, "CHK-SUCCESS", StringComparison.Ordinal));
+        Assert.Equal(CheckExecutionStatus.Success, successExecution.Status);
+
+        Assert.Equal(2, result.Findings.Count);
+        Assert.Contains(result.Findings, f => string.Equals(f.Id, "CHECK-FAIL-CHK-FAIL", StringComparison.Ordinal));
+        Assert.Contains(result.Findings, f => string.Equals(f.Id, "CHK-SUCCESS-1", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task RunAsync_ThrowsWhenCancellationAlreadyRequested()
     {
         var neverCalled = new StubCheck(id: "CHK-001", execute: () => []);
