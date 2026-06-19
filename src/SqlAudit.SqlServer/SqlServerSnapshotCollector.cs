@@ -1490,12 +1490,13 @@ public sealed class SqlServerSnapshotCollector
 
         var results = new List<ColumnNullStats>();
 
-        foreach (var chunk in nullableByTable.Chunk(50))
+        foreach (var chunk in nullableByTable.Chunk(200))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var parts = new List<string>();
             var columnMap = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
+            var sb = new System.Text.StringBuilder();
+            var firstPart = true;
 
             foreach (var group in chunk)
             {
@@ -1507,17 +1508,24 @@ public sealed class SqlServerSnapshotCollector
                 {
                     var key = $"{first.ObjectId}:{c.ColumnName}";
                     columnMap[key] = c;
-                    parts.Add($"SELECT {first.ObjectId} AS object_id, N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
-                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+
+                    if (!firstPart)
+                    {
+                        sb.Append(" UNION ALL ");
+                    }
+                    firstPart = false;
+
+                    sb.Append("SELECT ").Append(first.ObjectId).Append(" AS object_id, N'").Append(EscapeSqlString(c.ColumnName)).Append("' AS column_name, ")
+                      .Append("CASE WHEN EXISTS(SELECT 1 FROM ").Append(qualifiedTable).Append(" WITH (NOLOCK) WHERE [").Append(EscapeBracket(c.ColumnName)).Append("] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
                 }
             }
 
-            if (parts.Count == 0)
+            if (sb.Length == 0)
             {
                 continue;
             }
 
-            var sql = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
+            var sql = $"SELECT object_id, column_name FROM ({sb}) x WHERE has_nulls = 0";
 
             await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
