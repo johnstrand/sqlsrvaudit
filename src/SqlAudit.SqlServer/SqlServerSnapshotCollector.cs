@@ -27,13 +27,6 @@ public sealed class SqlServerSnapshotCollector
 
         Report("Server information");
         var serverInfo = await ReadServerInfoAsync(connection, cancellationToken).ConfigureAwait(false);
-        var includePhysical = profile == AuditProfile.Deep;
-        var includeStatistics = profile == AuditProfile.Deep;
-
-        Report("Tables");
-        var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
-        Report("Indexes");
-        var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var hasStatePermission = await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false);
         if (!hasStatePermission)
@@ -45,186 +38,9 @@ public sealed class SqlServerSnapshotCollector
                 "deadlock summary, missing index signals, log health, and tempdb pressure data were not collected."));
         }
 
-        Report("Resource-intensive queries");
-        var topResourceIntensiveQueries = await TryReadOptionalListAsync(
-            () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
-            warnings,
-            "Resource-Intensive Queries").ConfigureAwait(false);
-
-        Report("Wait statistics");
-        var topWaitStats = await TryReadOptionalListAsync(
-            () => ReadTopWaitStatsAsync(connection, cancellationToken),
-            warnings,
-            "Wait Statistics").ConfigureAwait(false);
-
-        Report("Query Store regressions");
-        var queryStoreRegressions = await TryReadOptionalListAsync(
-            () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
-            warnings,
-            "Query Store Regressions").ConfigureAwait(false);
-
-        Report("Active blocking sessions");
-        var activeBlockingSessions = await TryReadOptionalListAsync(
-            () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
-            warnings,
-            "Active Blocking Sessions").ConfigureAwait(false);
-
-        Report("Deadlock summary");
-        var deadlockSummary = await TryReadOptionalAsync(
-            () => ReadDeadlockSummaryAsync(connection, cancellationToken),
-            warnings,
-            "Deadlock Summary").ConfigureAwait(false);
-
-        Report("Missing index signals");
-        var missingIndexSignals = await TryReadOptionalListAsync(
-            () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
-            warnings,
-            "Missing Index Signals").ConfigureAwait(false);
-
-        Report("Log health");
-        var logHealth = await TryReadOptionalAsync(
-            () => ReadLogHealthAsync(connection, cancellationToken),
-            warnings,
-            "Log Health").ConfigureAwait(false);
-
-        Report("TempDB pressure");
-        var tempDbPressure = await TryReadOptionalAsync(
-            () => ReadTempDbPressureAsync(connection, cancellationToken),
-            warnings,
-            "TempDB Pressure").ConfigureAwait(false);
-
-        Report("File growth settings");
-        var fileGrowthHealth = await TryReadOptionalListAsync(
-            () => ReadFileGrowthHealthAsync(connection, cancellationToken),
-            warnings,
-            "File Growth Settings").ConfigureAwait(false);
-
-        Report("Backup posture");
-        var backupPosture = await TryReadOptionalAsync(
-            () => ReadBackupPostureAsync(connection, cancellationToken),
-            warnings,
-            "Backup Posture").ConfigureAwait(false);
-
-        Report("Security hygiene");
-        var securityHygieneIssues = await TryReadOptionalListAsync(
-            () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken),
-            warnings,
-            "Security Hygiene").ConfigureAwait(false);
-
-        Report("Index usage statistics");
-        var indexUsage = await TryReadOptionalListAsync(
-            () => ReadIndexUsageAsync(connection, cancellationToken),
-            warnings,
-            "Index Usage Statistics").ConfigureAwait(false);
-
-        Report("Index physical stats");
-        var indexPhysicalStats = includePhysical
-            ? await TryReadOptionalListAsync(
-                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
-                warnings,
-                "Index Physical Statistics").ConfigureAwait(false)
-            : (IReadOnlyList<IndexPhysicalInfo>)[];
-
-        Report("Table statistics");
-        var statistics = includeStatistics
-            ? await TryReadOptionalListAsync(
-                () => ReadStatisticsAsync(connection, cancellationToken),
-                warnings,
-                "Table Statistics").ConfigureAwait(false)
-            : (IReadOnlyList<StatisticsInfo>)[];
-
-        Report("Column metadata");
-        var columns = await TryReadOptionalListAsync(
-            () => ReadColumnsAsync(connection, cancellationToken),
-            warnings,
-            "Column Metadata").ConfigureAwait(false);
-
-        Report("Column null statistics");
-        var columnNullStats = profile == AuditProfile.Deep
-            ? await TryReadOptionalListAsync(
-                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
-                warnings,
-                "Column Null Statistics").ConfigureAwait(false)
-            : (IReadOnlyList<ColumnNullStats>)[];
-
-        Report("Foreign keys");
-        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
-        Report("Identity columns");
-        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
-
-        Report("Server configurations");
-        var serverConfigurations = await TryReadOptionalListAsync(
-            () => ReadServerConfigurationsAsync(connection, cancellationToken),
-            warnings,
-            "Server Configurations").ConfigureAwait(false);
-
-        Report("Integrity check history");
-        var lastDbccCheckDb = await TryReadOptionalStructAsync(
-            () => ReadLastDbccCheckDbAsync(connection, cancellationToken),
-            warnings,
-            "Integrity Check History").ConfigureAwait(false);
-
-        Report("TempDB configuration");
-        var tempDbConfig = await TryReadOptionalAsync(
-            () => ReadTempDbConfigAsync(connection, cancellationToken),
-            warnings,
-            "TempDB Configuration").ConfigureAwait(false);
-
-        Report("Sleeping transactions");
-        var sleepingTransactions = await TryReadOptionalListAsync(
-            () => ReadSleepingTransactionsAsync(connection, cancellationToken),
-            warnings,
-            "Sleeping Transactions").ConfigureAwait(false);
-
-        Report("Memory pressure");
-        var memoryPressure = await TryReadOptionalAsync(
-            () => ReadMemoryPressureAsync(connection, cancellationToken),
-            warnings,
-            "Memory Pressure").ConfigureAwait(false);
-
-        Report("File I/O latency");
-        var fileIoLatency = await TryReadOptionalListAsync(
-            () => ReadFileIoLatencyAsync(connection, cancellationToken),
-            warnings,
-            "File I/O Latency").ConfigureAwait(false);
-
-        Report("Plan cache");
-        var planCache = await TryReadOptionalAsync(
-            () => ReadPlanCacheAsync(connection, cancellationToken),
-            warnings,
-            "Plan Cache").ConfigureAwait(false);
-
-        Report("Table compression");
-        var tableCompression = profile == AuditProfile.Deep
-            ? await TryReadOptionalListAsync(
-                () => ReadTableCompressionAsync(connection, cancellationToken),
-                warnings,
-                "Table Compression").ConfigureAwait(false)
-            : (IReadOnlyList<TableCompressionInfo>)[];
-
-        Report("Database options");
-        var databaseOptions = await TryReadOptionalAsync(
-            () => ReadDatabaseOptionsAsync(connection, cancellationToken),
-            warnings,
-            "Database Options").ConfigureAwait(false);
-
-        Report("Volume stats");
-        var volumeStats = await TryReadOptionalListAsync(
-            () => ReadVolumeStatsAsync(connection, cancellationToken),
-            warnings,
-            "Volume Stats").ConfigureAwait(false);
-
-        Report("SQL Agent job failures");
-        var failedAgentJobs = await TryReadOptionalListAsync(
-            () => ReadFailedAgentJobsAsync(connection, cancellationToken),
-            warnings,
-            "SQL Agent Jobs").ConfigureAwait(false);
-
-        Report("Global trace flags");
-        var globalTraceFlags = await TryReadOptionalListAsync(
-            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken),
-            warnings,
-            "Global Trace Flags").ConfigureAwait(false);
+        var schemaMetadata = await CollectSchemaMetadataAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
+        var performanceMetrics = await CollectPerformanceMetricsAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
+        var operationalHealth = await CollectOperationalHealthAsync(connection, warnings, Report, cancellationToken).ConfigureAwait(false);
 
         var snapshot = new DatabaseSnapshot
         {
@@ -237,43 +53,338 @@ public sealed class SqlServerSnapshotCollector
             IsAzureSql = serverInfo.IsAzureSql,
             AutoCreateStatisticsOn = serverInfo.AutoCreateStatisticsOn,
             AutoUpdateStatisticsOn = serverInfo.AutoUpdateStatisticsOn,
-            Tables = tables,
-            Indexes = indexes,
-            IndexUsage = indexUsage,
-            IndexPhysicalStats = indexPhysicalStats,
-            ForeignKeys = foreignKeys,
-            Statistics = statistics,
-            IdentityColumns = identityColumns,
-            TopResourceIntensiveQueries = topResourceIntensiveQueries,
-            TopWaitStats = topWaitStats,
-            QueryStoreRegressions = queryStoreRegressions,
-            ActiveBlockingSessions = activeBlockingSessions,
-            DeadlockSummary = deadlockSummary,
-            MissingIndexSignals = missingIndexSignals,
-            LogHealth = logHealth,
-            TempDbPressure = tempDbPressure,
-            FileGrowthHealth = fileGrowthHealth,
-            BackupPosture = backupPosture,
-            SecurityHygieneIssues = securityHygieneIssues,
+
+            Tables = schemaMetadata.Tables,
+            Indexes = schemaMetadata.Indexes,
+            ForeignKeys = schemaMetadata.ForeignKeys,
+            Statistics = schemaMetadata.Statistics,
+            IdentityColumns = schemaMetadata.IdentityColumns,
+            Columns = schemaMetadata.Columns,
+            ColumnNullStats = schemaMetadata.ColumnNullStats,
+            TableCompression = schemaMetadata.TableCompression,
+
+            TopResourceIntensiveQueries = performanceMetrics.TopResourceIntensiveQueries,
+            TopWaitStats = performanceMetrics.TopWaitStats,
+            QueryStoreRegressions = performanceMetrics.QueryStoreRegressions,
+            ActiveBlockingSessions = performanceMetrics.ActiveBlockingSessions,
+            DeadlockSummary = performanceMetrics.DeadlockSummary,
+            MissingIndexSignals = performanceMetrics.MissingIndexSignals,
+            IndexUsage = performanceMetrics.IndexUsage,
+            IndexPhysicalStats = performanceMetrics.IndexPhysicalStats,
+            SleepingTransactions = performanceMetrics.SleepingTransactions,
+            MemoryPressure = performanceMetrics.MemoryPressure,
+            FileIoLatency = performanceMetrics.FileIoLatency,
+            PlanCache = performanceMetrics.PlanCache,
+
+            LogHealth = operationalHealth.LogHealth,
+            TempDbPressure = operationalHealth.TempDbPressure,
+            FileGrowthHealth = operationalHealth.FileGrowthHealth,
+            BackupPosture = operationalHealth.BackupPosture,
+            SecurityHygieneIssues = operationalHealth.SecurityHygieneIssues,
+            ServerConfigurations = operationalHealth.ServerConfigurations,
+            LastDbccCheckDbUtc = operationalHealth.LastDbccCheckDb,
+            TempDbConfig = operationalHealth.TempDbConfig,
+            DatabaseOptions = operationalHealth.DatabaseOptions,
+            VolumeStats = operationalHealth.VolumeStats,
+            FailedAgentJobs = operationalHealth.FailedAgentJobs,
+            GlobalTraceFlags = operationalHealth.GlobalTraceFlags,
+
             CollectionWarnings = warnings,
-            Columns = columns,
-            ColumnNullStats = columnNullStats,
-            ServerConfigurations = serverConfigurations,
-            LastDbccCheckDbUtc = lastDbccCheckDb,
-            TempDbConfig = tempDbConfig,
-            SleepingTransactions = sleepingTransactions,
-            MemoryPressure = memoryPressure,
-            FileIoLatency = fileIoLatency,
-            PlanCache = planCache,
-            TableCompression = tableCompression,
-            DatabaseOptions = databaseOptions,
-            VolumeStats = volumeStats,
-            FailedAgentJobs = failedAgentJobs,
-            GlobalTraceFlags = globalTraceFlags,
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
     }
+
+    private static async Task<SchemaMetadata> CollectSchemaMetadataAsync(
+        SqlConnection connection,
+        AuditProfile profile,
+        List<CollectionWarning> warnings,
+        Action<string> report,
+        CancellationToken cancellationToken)
+    {
+        var includeStatistics = profile == AuditProfile.Deep;
+
+        report("Tables");
+        var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Indexes");
+        var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Table statistics");
+        var statistics = includeStatistics
+            ? await TryReadOptionalListAsync(
+                () => ReadStatisticsAsync(connection, cancellationToken),
+                warnings,
+                "Table Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<StatisticsInfo>)[];
+
+        report("Column metadata");
+        var columns = await TryReadOptionalListAsync(
+            () => ReadColumnsAsync(connection, cancellationToken),
+            warnings,
+            "Column Metadata").ConfigureAwait(false);
+
+        report("Column null statistics");
+        var columnNullStats = profile == AuditProfile.Deep
+            ? await TryReadOptionalListAsync(
+                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
+                warnings,
+                "Column Null Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<ColumnNullStats>)[];
+
+        report("Foreign keys");
+        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Identity columns");
+        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Table compression");
+        var tableCompression = profile == AuditProfile.Deep
+            ? await TryReadOptionalListAsync(
+                () => ReadTableCompressionAsync(connection, cancellationToken),
+                warnings,
+                "Table Compression").ConfigureAwait(false)
+            : (IReadOnlyList<TableCompressionInfo>)[];
+
+        return new SchemaMetadata(
+            tables,
+            indexes,
+            foreignKeys,
+            statistics,
+            identityColumns,
+            columns,
+            columnNullStats,
+            tableCompression);
+    }
+
+    private static async Task<PerformanceMetrics> CollectPerformanceMetricsAsync(
+        SqlConnection connection,
+        AuditProfile profile,
+        List<CollectionWarning> warnings,
+        Action<string> report,
+        CancellationToken cancellationToken)
+    {
+        var includePhysical = profile == AuditProfile.Deep;
+
+        report("Resource-intensive queries");
+        var topResourceIntensiveQueries = await TryReadOptionalListAsync(
+            () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
+            warnings,
+            "Resource-Intensive Queries").ConfigureAwait(false);
+
+        report("Wait statistics");
+        var topWaitStats = await TryReadOptionalListAsync(
+            () => ReadTopWaitStatsAsync(connection, cancellationToken),
+            warnings,
+            "Wait Statistics").ConfigureAwait(false);
+
+        report("Query Store regressions");
+        var queryStoreRegressions = await TryReadOptionalListAsync(
+            () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
+            warnings,
+            "Query Store Regressions").ConfigureAwait(false);
+
+        report("Active blocking sessions");
+        var activeBlockingSessions = await TryReadOptionalListAsync(
+            () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
+            warnings,
+            "Active Blocking Sessions").ConfigureAwait(false);
+
+        report("Deadlock summary");
+        var deadlockSummary = await TryReadOptionalAsync(
+            () => ReadDeadlockSummaryAsync(connection, cancellationToken),
+            warnings,
+            "Deadlock Summary").ConfigureAwait(false);
+
+        report("Missing index signals");
+        var missingIndexSignals = await TryReadOptionalListAsync(
+            () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
+            warnings,
+            "Missing Index Signals").ConfigureAwait(false);
+
+        report("Index usage statistics");
+        var indexUsage = await TryReadOptionalListAsync(
+            () => ReadIndexUsageAsync(connection, cancellationToken),
+            warnings,
+            "Index Usage Statistics").ConfigureAwait(false);
+
+        report("Index physical stats");
+        var indexPhysicalStats = includePhysical
+            ? await TryReadOptionalListAsync(
+                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
+                warnings,
+                "Index Physical Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<IndexPhysicalInfo>)[];
+
+        report("Sleeping transactions");
+        var sleepingTransactions = await TryReadOptionalListAsync(
+            () => ReadSleepingTransactionsAsync(connection, cancellationToken),
+            warnings,
+            "Sleeping Transactions").ConfigureAwait(false);
+
+        report("Memory pressure");
+        var memoryPressure = await TryReadOptionalAsync(
+            () => ReadMemoryPressureAsync(connection, cancellationToken),
+            warnings,
+            "Memory Pressure").ConfigureAwait(false);
+
+        report("File I/O latency");
+        var fileIoLatency = await TryReadOptionalListAsync(
+            () => ReadFileIoLatencyAsync(connection, cancellationToken),
+            warnings,
+            "File I/O Latency").ConfigureAwait(false);
+
+        report("Plan cache");
+        var planCache = await TryReadOptionalAsync(
+            () => ReadPlanCacheAsync(connection, cancellationToken),
+            warnings,
+            "Plan Cache").ConfigureAwait(false);
+
+        return new PerformanceMetrics(
+            topResourceIntensiveQueries,
+            topWaitStats,
+            queryStoreRegressions,
+            activeBlockingSessions,
+            deadlockSummary,
+            missingIndexSignals,
+            indexUsage,
+            indexPhysicalStats,
+            sleepingTransactions,
+            memoryPressure,
+            fileIoLatency,
+            planCache);
+    }
+
+    private static async Task<OperationalHealth> CollectOperationalHealthAsync(
+        SqlConnection connection,
+        List<CollectionWarning> warnings,
+        Action<string> report,
+        CancellationToken cancellationToken)
+    {
+        report("Log health");
+        var logHealth = await TryReadOptionalAsync(
+            () => ReadLogHealthAsync(connection, cancellationToken),
+            warnings,
+            "Log Health").ConfigureAwait(false);
+
+        report("TempDB pressure");
+        var tempDbPressure = await TryReadOptionalAsync(
+            () => ReadTempDbPressureAsync(connection, cancellationToken),
+            warnings,
+            "TempDB Pressure").ConfigureAwait(false);
+
+        report("File growth settings");
+        var fileGrowthHealth = await TryReadOptionalListAsync(
+            () => ReadFileGrowthHealthAsync(connection, cancellationToken),
+            warnings,
+            "File Growth Settings").ConfigureAwait(false);
+
+        report("Backup posture");
+        var backupPosture = await TryReadOptionalAsync(
+            () => ReadBackupPostureAsync(connection, cancellationToken),
+            warnings,
+            "Backup Posture").ConfigureAwait(false);
+
+        report("Security hygiene");
+        var securityHygieneIssues = await TryReadOptionalListAsync(
+            () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken),
+            warnings,
+            "Security Hygiene").ConfigureAwait(false);
+
+        report("Server configurations");
+        var serverConfigurations = await TryReadOptionalListAsync(
+            () => ReadServerConfigurationsAsync(connection, cancellationToken),
+            warnings,
+            "Server Configurations").ConfigureAwait(false);
+
+        report("Integrity check history");
+        var lastDbccCheckDb = await TryReadOptionalStructAsync(
+            () => ReadLastDbccCheckDbAsync(connection, cancellationToken),
+            warnings,
+            "Integrity Check History").ConfigureAwait(false);
+
+        report("TempDB configuration");
+        var tempDbConfig = await TryReadOptionalAsync(
+            () => ReadTempDbConfigAsync(connection, cancellationToken),
+            warnings,
+            "TempDB Configuration").ConfigureAwait(false);
+
+        report("Database options");
+        var databaseOptions = await TryReadOptionalAsync(
+            () => ReadDatabaseOptionsAsync(connection, cancellationToken),
+            warnings,
+            "Database Options").ConfigureAwait(false);
+
+        report("Volume stats");
+        var volumeStats = await TryReadOptionalListAsync(
+            () => ReadVolumeStatsAsync(connection, cancellationToken),
+            warnings,
+            "Volume Stats").ConfigureAwait(false);
+
+        report("SQL Agent job failures");
+        var failedAgentJobs = await TryReadOptionalListAsync(
+            () => ReadFailedAgentJobsAsync(connection, cancellationToken),
+            warnings,
+            "SQL Agent Jobs").ConfigureAwait(false);
+
+        report("Global trace flags");
+        var globalTraceFlags = await TryReadOptionalListAsync(
+            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken),
+            warnings,
+            "Global Trace Flags").ConfigureAwait(false);
+
+        return new OperationalHealth(
+            logHealth,
+            tempDbPressure,
+            fileGrowthHealth,
+            backupPosture,
+            securityHygieneIssues,
+            serverConfigurations,
+            lastDbccCheckDb,
+            tempDbConfig,
+            databaseOptions,
+            volumeStats,
+            failedAgentJobs,
+            globalTraceFlags);
+    }
+
+    private sealed record SchemaMetadata(
+        IReadOnlyList<TableInfo> Tables,
+        IReadOnlyList<IndexInfo> Indexes,
+        IReadOnlyList<ForeignKeyInfo> ForeignKeys,
+        IReadOnlyList<StatisticsInfo> Statistics,
+        IReadOnlyList<IdentityColumnInfo> IdentityColumns,
+        IReadOnlyList<ColumnInfo> Columns,
+        IReadOnlyList<ColumnNullStats> ColumnNullStats,
+        IReadOnlyList<TableCompressionInfo> TableCompression);
+
+    private sealed record PerformanceMetrics(
+        IReadOnlyList<ResourceIntensiveQueryInfo> TopResourceIntensiveQueries,
+        IReadOnlyList<WaitStatInfo> TopWaitStats,
+        IReadOnlyList<QueryStoreRegressionInfo> QueryStoreRegressions,
+        IReadOnlyList<BlockingSessionInfo> ActiveBlockingSessions,
+        DeadlockSummaryInfo? DeadlockSummary,
+        IReadOnlyList<MissingIndexSignalInfo> MissingIndexSignals,
+        IReadOnlyList<IndexUsageInfo> IndexUsage,
+        IReadOnlyList<IndexPhysicalInfo> IndexPhysicalStats,
+        IReadOnlyList<SleepingTransactionInfo> SleepingTransactions,
+        MemoryPressureInfo? MemoryPressure,
+        IReadOnlyList<FileIoLatencyInfo> FileIoLatency,
+        PlanCacheInfo? PlanCache);
+
+    private sealed record OperationalHealth(
+        LogHealthInfo? LogHealth,
+        TempDbPressureInfo? TempDbPressure,
+        IReadOnlyList<FileGrowthHealthInfo> FileGrowthHealth,
+        BackupPostureInfo? BackupPosture,
+        IReadOnlyList<SecurityHygieneIssueInfo> SecurityHygieneIssues,
+        IReadOnlyList<ServerConfigInfo> ServerConfigurations,
+        DateTimeOffset? LastDbccCheckDb,
+        TempDbConfigInfo? TempDbConfig,
+        DatabaseOptionsInfo? DatabaseOptions,
+        IReadOnlyList<VolumeInfo> VolumeStats,
+        IReadOnlyList<FailedAgentJobInfo> FailedAgentJobs,
+        IReadOnlyList<GlobalTraceFlagInfo> GlobalTraceFlags);
 
     private static DatabaseSnapshot ApplyExclusions(
         DatabaseSnapshot snapshot,
