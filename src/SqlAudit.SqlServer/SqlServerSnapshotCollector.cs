@@ -633,6 +633,30 @@ public sealed class SqlServerSnapshotCollector
             cancellationToken).ConfigureAwait(false);
     }
 
+    private sealed record ForeignKeyColumnRow(
+        int ObjectId,
+        string FkName,
+        string ParentSchema,
+        string ParentTable,
+        string ReferencedSchema,
+        string ReferencedTable,
+        bool IsDisabled,
+        bool IsNotTrusted,
+        bool HasSupportingIndex,
+        string DeleteAction,
+        string UpdateAction,
+        int ConstraintColumnId,
+        string ParentColumn,
+        string ParentType,
+        short ParentMaxLength,
+        byte ParentPrecision,
+        byte ParentScale,
+        string ReferencedColumn,
+        string ReferencedType,
+        short ReferencedMaxLength,
+        byte ReferencedPrecision,
+        byte ReferencedScale);
+
     private static async Task<IReadOnlyList<ForeignKeyInfo>> ReadForeignKeysAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = """
@@ -643,10 +667,6 @@ public sealed class SqlServerSnapshotCollector
                 pt.name AS parent_table,
                 rs.name AS referenced_schema,
                 rt.name AS referenced_table,
-                cols.parent_columns,
-                cols.referenced_columns,
-                cols.parent_types,
-                cols.referenced_types,
                 fk.is_disabled,
                 fk.is_not_trusted,
                 CASE WHEN EXISTS
@@ -660,135 +680,118 @@ public sealed class SqlServerSnapshotCollector
                       AND NOT EXISTS
                       (
                           SELECT 1
-                          FROM sys.foreign_key_columns fkc
+                          FROM sys.foreign_key_columns fkc_idx
                           LEFT JOIN sys.index_columns ic
                               ON ic.object_id = i.object_id
                              AND ic.index_id = i.index_id
-                             AND ic.key_ordinal = fkc.constraint_column_id
-                             AND ic.column_id = fkc.parent_column_id
-                          WHERE fkc.constraint_object_id = fk.object_id
+                             AND ic.key_ordinal = fkc_idx.constraint_column_id
+                             AND ic.column_id = fkc_idx.parent_column_id
+                          WHERE fkc_idx.constraint_object_id = fk.object_id
                             AND ic.index_column_id IS NULL
                       )
                 ) THEN 1 ELSE 0 END AS has_supporting_index,
                 fk.delete_referential_action_desc AS delete_action,
-                fk.update_referential_action_desc AS update_action
+                fk.update_referential_action_desc AS update_action,
+                fkc.constraint_column_id,
+                pc.name AS parent_column,
+                ptype.name AS parent_type,
+                pc.max_length AS parent_max_length,
+                pc.precision AS parent_precision,
+                pc.scale AS parent_scale,
+                rc.name AS referenced_column,
+                rtype.name AS referenced_type,
+                rc.max_length AS referenced_max_length,
+                rc.precision AS referenced_precision,
+                rc.scale AS referenced_scale
             FROM sys.foreign_keys fk
             INNER JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
             INNER JOIN sys.schemas ps ON ps.schema_id = pt.schema_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.schemas rs ON rs.schema_id = rt.schema_id
-            CROSS APPLY
-            (
-                SELECT
-                    STUFF(
-                        (
-                            SELECT N',' + QUOTENAME(pc.name)
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns pc
-                                ON pc.object_id = fkc2.parent_object_id
-                               AND pc.column_id = fkc2.parent_column_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS parent_columns,
-                    STUFF(
-                        (
-                            SELECT N',' + QUOTENAME(rc.name)
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns rc
-                                ON rc.object_id = fkc2.referenced_object_id
-                               AND rc.column_id = fkc2.referenced_column_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS referenced_columns,
-                    STUFF(
-                        (
-                            SELECT N',' + CONCAT(ptype.name, N'(',
-                                CASE
-                                    WHEN ptype.name IN (N'nchar', N'nvarchar')
-                                        THEN CASE WHEN pc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), pc.max_length / 2) END
-                                    WHEN ptype.name IN (N'char', N'varchar', N'binary', N'varbinary')
-                                        THEN CASE WHEN pc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), pc.max_length) END
-                                    WHEN ptype.name IN (N'decimal', N'numeric')
-                                        THEN CONCAT(CONVERT(nvarchar(10), pc.precision), N',', CONVERT(nvarchar(10), pc.scale))
-                                    WHEN ptype.name IN (N'datetime2', N'datetimeoffset', N'time')
-                                        THEN CONVERT(nvarchar(10), pc.scale)
-                                    ELSE N''
-                                END,
-                            N')')
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns pc
-                                ON pc.object_id = fkc2.parent_object_id
-                               AND pc.column_id = fkc2.parent_column_id
-                            INNER JOIN sys.types ptype ON ptype.user_type_id = pc.user_type_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS parent_types,
-                    STUFF(
-                        (
-                            SELECT N',' + CONCAT(rtype.name, N'(',
-                                CASE
-                                    WHEN rtype.name IN (N'nchar', N'nvarchar')
-                                        THEN CASE WHEN rc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), rc.max_length / 2) END
-                                    WHEN rtype.name IN (N'char', N'varchar', N'binary', N'varbinary')
-                                        THEN CASE WHEN rc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), rc.max_length) END
-                                    WHEN rtype.name IN (N'decimal', N'numeric')
-                                        THEN CONCAT(CONVERT(nvarchar(10), rc.precision), N',', CONVERT(nvarchar(10), rc.scale))
-                                    WHEN rtype.name IN (N'datetime2', N'datetimeoffset', N'time')
-                                        THEN CONVERT(nvarchar(10), rc.scale)
-                                    ELSE N''
-                                END,
-                            N')')
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns rc
-                                ON rc.object_id = fkc2.referenced_object_id
-                               AND rc.column_id = fkc2.referenced_column_id
-                            INNER JOIN sys.types rtype ON rtype.user_type_id = rc.user_type_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS referenced_types
-            ) cols
+            INNER JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+            INNER JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+            INNER JOIN sys.types ptype ON ptype.user_type_id = pc.user_type_id
+            INNER JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+            INNER JOIN sys.types rtype ON rtype.user_type_id = rc.user_type_id
             WHERE pt.is_ms_shipped = 0
               AND rt.is_ms_shipped = 0
+            ORDER BY fk.object_id, fkc.constraint_column_id
         """;
 
-        return await ReadListAsync(connection, sql,
-            reader => new ForeignKeyInfo(
+        var rows = await ReadListAsync(connection, sql,
+            reader => new ForeignKeyColumnRow(
                 SqlRead.Int(reader, "object_id"),
                 SqlRead.String(reader, "fk_name"),
                 SqlRead.String(reader, "parent_schema"),
                 SqlRead.String(reader, "parent_table"),
                 SqlRead.String(reader, "referenced_schema"),
                 SqlRead.String(reader, "referenced_table"),
-                SqlRead.String(reader, "parent_columns"),
-                SqlRead.String(reader, "referenced_columns"),
-                SqlRead.String(reader, "parent_types"),
-                SqlRead.String(reader, "referenced_types"),
                 SqlRead.Bool(reader, "is_disabled"),
                 SqlRead.Bool(reader, "is_not_trusted"),
                 SqlRead.Bool(reader, "has_supporting_index"),
                 SqlRead.String(reader, "delete_action"),
-                SqlRead.String(reader, "update_action")),
+                SqlRead.String(reader, "update_action"),
+                SqlRead.Int(reader, "constraint_column_id"),
+                SqlRead.String(reader, "parent_column"),
+                SqlRead.String(reader, "parent_type"),
+                Convert.ToInt16(reader["parent_max_length"]),
+                Convert.ToByte(reader["parent_precision"]),
+                Convert.ToByte(reader["parent_scale"]),
+                SqlRead.String(reader, "referenced_column"),
+                SqlRead.String(reader, "referenced_type"),
+                Convert.ToInt16(reader["referenced_max_length"]),
+                Convert.ToByte(reader["referenced_precision"]),
+                Convert.ToByte(reader["referenced_scale"])),
             cancellationToken).ConfigureAwait(false);
+
+        return rows
+            .GroupBy(r => r.ObjectId)
+            .Select(g =>
+            {
+                var first = g.First();
+                return new ForeignKeyInfo(
+                    first.ObjectId,
+                    first.FkName,
+                    first.ParentSchema,
+                    first.ParentTable,
+                    first.ReferencedSchema,
+                    first.ReferencedTable,
+                    string.Join(",", g.Select(r => $"[{EscapeBracket(r.ParentColumn)}]")),
+                    string.Join(",", g.Select(r => $"[{EscapeBracket(r.ReferencedColumn)}]")),
+                    string.Join(",", g.Select(r => FormatType(r.ParentType, r.ParentMaxLength, r.ParentPrecision, r.ParentScale))),
+                    string.Join(",", g.Select(r => FormatType(r.ReferencedType, r.ReferencedMaxLength, r.ReferencedPrecision, r.ReferencedScale))),
+                    first.IsDisabled,
+                    first.IsNotTrusted,
+                    first.HasSupportingIndex,
+                    first.DeleteAction,
+                    first.UpdateAction);
+            })
+            .ToArray();
+    }
+
+    private static string FormatType(string name, short maxLength, byte precision, byte scale)
+    {
+        if (name is "nchar" or "nvarchar")
+        {
+            return $"{name}({(maxLength == -1 ? "max" : (maxLength / 2).ToString(CultureInfo.InvariantCulture))})";
+        }
+
+        if (name is "char" or "varchar" or "binary" or "varbinary")
+        {
+            return $"{name}({(maxLength == -1 ? "max" : maxLength.ToString(CultureInfo.InvariantCulture))})";
+        }
+
+        if (name is "decimal" or "numeric")
+        {
+            return $"{name}({precision},{scale})";
+        }
+
+        if (name is "datetime2" or "datetimeoffset" or "time")
+        {
+            return $"{name}({scale})";
+        }
+
+        return name;
     }
 
     private static async Task<IReadOnlyList<StatisticsInfo>> ReadStatisticsAsync(SqlConnection connection, CancellationToken cancellationToken)
