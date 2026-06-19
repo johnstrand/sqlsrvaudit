@@ -1600,6 +1600,7 @@ public sealed class SqlServerSnapshotCollector
             .GroupBy(c => c.ObjectId);
 
         var results = new List<ColumnNullStats>();
+        var sqlBuilder = new SqlCommandBuilder();
 
         foreach (var chunk in nullableByTable.Chunk(50))
         {
@@ -1608,18 +1609,25 @@ public sealed class SqlServerSnapshotCollector
             var parts = new List<string>();
             var columnMap = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
 
+            await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
+            var paramIndex = 0;
+
             foreach (var group in chunk)
             {
                 var cols = group.Take(maxColumnsPerTable).ToArray();
                 var first = cols[0];
-                var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
+                var qualifiedTable = $"{sqlBuilder.QuoteIdentifier(first.SchemaName)}.{sqlBuilder.QuoteIdentifier(first.TableName)}";
 
                 foreach (var c in cols)
                 {
                     var key = $"{first.ObjectId}:{c.ColumnName}";
                     columnMap[key] = c;
-                    parts.Add($"SELECT {first.ObjectId} AS object_id, N'{EscapeSqlString(c.ColumnName)}' AS column_name, " +
-                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE [{EscapeBracket(c.ColumnName)}] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+
+                    var paramName = $"@col_{paramIndex++}";
+                    command.Parameters.AddWithValue(paramName, c.ColumnName);
+
+                    parts.Add($"SELECT {first.ObjectId} AS object_id, {paramName} AS column_name, " +
+                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE {sqlBuilder.QuoteIdentifier(c.ColumnName)} IS NULL) THEN 1 ELSE 0 END AS has_nulls");
                 }
             }
 
@@ -1628,9 +1636,8 @@ public sealed class SqlServerSnapshotCollector
                 continue;
             }
 
-            var sql = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
+            command.CommandText = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
 
-            await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -1653,8 +1660,6 @@ public sealed class SqlServerSnapshotCollector
 
         return results;
     }
-
-    private static string EscapeBracket(string name) => name.Replace("]", "]]", StringComparison.Ordinal);
 
     private static string FormatColumnDataType(ColumnInfo column)
     {
@@ -1687,8 +1692,6 @@ public sealed class SqlServerSnapshotCollector
 
         return dataType;
     }
-
-    private static string EscapeSqlString(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 
     private static async Task<IReadOnlyList<SecurityHygieneIssueInfo>> ReadSecurityHygieneIssuesAsync(
         SqlConnection connection,
