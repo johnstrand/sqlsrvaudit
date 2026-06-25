@@ -867,8 +867,8 @@ public sealed class SqlServerSnapshotCollector
                     first.ParentTable,
                     first.ReferencedSchema,
                     first.ReferencedTable,
-                    string.Join(",", g.Select(r => $"[{r.ParentColumn.Replace("]", "]]", StringComparison.Ordinal)}]")),
-                    string.Join(",", g.Select(r => $"[{r.ReferencedColumn.Replace("]", "]]", StringComparison.Ordinal)}]")),
+                    string.Join(",", g.Select(r => $"[{EscapeBracket(r.ParentColumn)}]")),
+                    string.Join(",", g.Select(r => $"[{EscapeBracket(r.ReferencedColumn)}]")),
                     string.Join(",", g.Select(r => FormatType(r.ParentType, r.ParentMaxLength, r.ParentPrecision, r.ParentScale))),
                     string.Join(",", g.Select(r => FormatType(r.ReferencedType, r.ReferencedMaxLength, r.ReferencedPrecision, r.ReferencedScale))),
                     first.IsDisabled,
@@ -879,6 +879,9 @@ public sealed class SqlServerSnapshotCollector
             })
             .ToArray();
     }
+
+    private static string EscapeBracket(string identifier) =>
+        identifier.Replace("]", "]]", StringComparison.Ordinal);
 
     private static string FormatType(string name, short maxLength, byte precision, byte scale)
     {
