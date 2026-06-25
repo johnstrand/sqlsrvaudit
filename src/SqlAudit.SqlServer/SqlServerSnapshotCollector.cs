@@ -27,13 +27,6 @@ public sealed class SqlServerSnapshotCollector
 
         Report("Server information");
         var serverInfo = await ReadServerInfoAsync(connection, cancellationToken).ConfigureAwait(false);
-        var includePhysical = profile == AuditProfile.Deep;
-        var includeStatistics = profile == AuditProfile.Deep;
-
-        Report("Tables");
-        var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
-        Report("Indexes");
-        var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
 
         var hasStatePermission = await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false);
         if (!hasStatePermission)
@@ -45,186 +38,9 @@ public sealed class SqlServerSnapshotCollector
                 "deadlock summary, missing index signals, log health, and tempdb pressure data were not collected."));
         }
 
-        Report("Resource-intensive queries");
-        var topResourceIntensiveQueries = await TryReadOptionalListAsync(
-            () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
-            warnings,
-            "Resource-Intensive Queries").ConfigureAwait(false);
-
-        Report("Wait statistics");
-        var topWaitStats = await TryReadOptionalListAsync(
-            () => ReadTopWaitStatsAsync(connection, cancellationToken),
-            warnings,
-            "Wait Statistics").ConfigureAwait(false);
-
-        Report("Query Store regressions");
-        var queryStoreRegressions = await TryReadOptionalListAsync(
-            () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
-            warnings,
-            "Query Store Regressions").ConfigureAwait(false);
-
-        Report("Active blocking sessions");
-        var activeBlockingSessions = await TryReadOptionalListAsync(
-            () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
-            warnings,
-            "Active Blocking Sessions").ConfigureAwait(false);
-
-        Report("Deadlock summary");
-        var deadlockSummary = await TryReadOptionalAsync(
-            () => ReadDeadlockSummaryAsync(connection, cancellationToken),
-            warnings,
-            "Deadlock Summary").ConfigureAwait(false);
-
-        Report("Missing index signals");
-        var missingIndexSignals = await TryReadOptionalListAsync(
-            () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
-            warnings,
-            "Missing Index Signals").ConfigureAwait(false);
-
-        Report("Log health");
-        var logHealth = await TryReadOptionalAsync(
-            () => ReadLogHealthAsync(connection, cancellationToken),
-            warnings,
-            "Log Health").ConfigureAwait(false);
-
-        Report("TempDB pressure");
-        var tempDbPressure = await TryReadOptionalAsync(
-            () => ReadTempDbPressureAsync(connection, cancellationToken),
-            warnings,
-            "TempDB Pressure").ConfigureAwait(false);
-
-        Report("File growth settings");
-        var fileGrowthHealth = await TryReadOptionalListAsync(
-            () => ReadFileGrowthHealthAsync(connection, cancellationToken),
-            warnings,
-            "File Growth Settings").ConfigureAwait(false);
-
-        Report("Backup posture");
-        var backupPosture = await TryReadOptionalAsync(
-            () => ReadBackupPostureAsync(connection, cancellationToken),
-            warnings,
-            "Backup Posture").ConfigureAwait(false);
-
-        Report("Security hygiene");
-        var securityHygieneIssues = await TryReadOptionalListAsync(
-            () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken),
-            warnings,
-            "Security Hygiene").ConfigureAwait(false);
-
-        Report("Index usage statistics");
-        var indexUsage = await TryReadOptionalListAsync(
-            () => ReadIndexUsageAsync(connection, cancellationToken),
-            warnings,
-            "Index Usage Statistics").ConfigureAwait(false);
-
-        Report("Index physical stats");
-        var indexPhysicalStats = includePhysical
-            ? await TryReadOptionalListAsync(
-                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
-                warnings,
-                "Index Physical Statistics").ConfigureAwait(false)
-            : (IReadOnlyList<IndexPhysicalInfo>)[];
-
-        Report("Table statistics");
-        var statistics = includeStatistics
-            ? await TryReadOptionalListAsync(
-                () => ReadStatisticsAsync(connection, cancellationToken),
-                warnings,
-                "Table Statistics").ConfigureAwait(false)
-            : (IReadOnlyList<StatisticsInfo>)[];
-
-        Report("Column metadata");
-        var columns = await TryReadOptionalListAsync(
-            () => ReadColumnsAsync(connection, cancellationToken),
-            warnings,
-            "Column Metadata").ConfigureAwait(false);
-
-        Report("Column null statistics");
-        var columnNullStats = profile == AuditProfile.Deep
-            ? await TryReadOptionalListAsync(
-                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
-                warnings,
-                "Column Null Statistics").ConfigureAwait(false)
-            : (IReadOnlyList<ColumnNullStats>)[];
-
-        Report("Foreign keys");
-        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
-        Report("Identity columns");
-        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
-
-        Report("Server configurations");
-        var serverConfigurations = await TryReadOptionalListAsync(
-            () => ReadServerConfigurationsAsync(connection, cancellationToken),
-            warnings,
-            "Server Configurations").ConfigureAwait(false);
-
-        Report("Integrity check history");
-        var lastDbccCheckDb = await TryReadOptionalStructAsync(
-            () => ReadLastDbccCheckDbAsync(connection, cancellationToken),
-            warnings,
-            "Integrity Check History").ConfigureAwait(false);
-
-        Report("TempDB configuration");
-        var tempDbConfig = await TryReadOptionalAsync(
-            () => ReadTempDbConfigAsync(connection, cancellationToken),
-            warnings,
-            "TempDB Configuration").ConfigureAwait(false);
-
-        Report("Sleeping transactions");
-        var sleepingTransactions = await TryReadOptionalListAsync(
-            () => ReadSleepingTransactionsAsync(connection, cancellationToken),
-            warnings,
-            "Sleeping Transactions").ConfigureAwait(false);
-
-        Report("Memory pressure");
-        var memoryPressure = await TryReadOptionalAsync(
-            () => ReadMemoryPressureAsync(connection, cancellationToken),
-            warnings,
-            "Memory Pressure").ConfigureAwait(false);
-
-        Report("File I/O latency");
-        var fileIoLatency = await TryReadOptionalListAsync(
-            () => ReadFileIoLatencyAsync(connection, cancellationToken),
-            warnings,
-            "File I/O Latency").ConfigureAwait(false);
-
-        Report("Plan cache");
-        var planCache = await TryReadOptionalAsync(
-            () => ReadPlanCacheAsync(connection, cancellationToken),
-            warnings,
-            "Plan Cache").ConfigureAwait(false);
-
-        Report("Table compression");
-        var tableCompression = profile == AuditProfile.Deep
-            ? await TryReadOptionalListAsync(
-                () => ReadTableCompressionAsync(connection, cancellationToken),
-                warnings,
-                "Table Compression").ConfigureAwait(false)
-            : (IReadOnlyList<TableCompressionInfo>)[];
-
-        Report("Database options");
-        var databaseOptions = await TryReadOptionalAsync(
-            () => ReadDatabaseOptionsAsync(connection, cancellationToken),
-            warnings,
-            "Database Options").ConfigureAwait(false);
-
-        Report("Volume stats");
-        var volumeStats = await TryReadOptionalListAsync(
-            () => ReadVolumeStatsAsync(connection, cancellationToken),
-            warnings,
-            "Volume Stats").ConfigureAwait(false);
-
-        Report("SQL Agent job failures");
-        var failedAgentJobs = await TryReadOptionalListAsync(
-            () => ReadFailedAgentJobsAsync(connection, cancellationToken),
-            warnings,
-            "SQL Agent Jobs").ConfigureAwait(false);
-
-        Report("Global trace flags");
-        var globalTraceFlags = await TryReadOptionalListAsync(
-            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken),
-            warnings,
-            "Global Trace Flags").ConfigureAwait(false);
+        var schemaMetadata = await CollectSchemaMetadataAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
+        var performanceMetrics = await CollectPerformanceMetricsAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
+        var operationalHealth = await CollectOperationalHealthAsync(connection, warnings, Report, cancellationToken).ConfigureAwait(false);
 
         var snapshot = new DatabaseSnapshot
         {
@@ -237,43 +53,338 @@ public sealed class SqlServerSnapshotCollector
             IsAzureSql = serverInfo.IsAzureSql,
             AutoCreateStatisticsOn = serverInfo.AutoCreateStatisticsOn,
             AutoUpdateStatisticsOn = serverInfo.AutoUpdateStatisticsOn,
-            Tables = tables,
-            Indexes = indexes,
-            IndexUsage = indexUsage,
-            IndexPhysicalStats = indexPhysicalStats,
-            ForeignKeys = foreignKeys,
-            Statistics = statistics,
-            IdentityColumns = identityColumns,
-            TopResourceIntensiveQueries = topResourceIntensiveQueries,
-            TopWaitStats = topWaitStats,
-            QueryStoreRegressions = queryStoreRegressions,
-            ActiveBlockingSessions = activeBlockingSessions,
-            DeadlockSummary = deadlockSummary,
-            MissingIndexSignals = missingIndexSignals,
-            LogHealth = logHealth,
-            TempDbPressure = tempDbPressure,
-            FileGrowthHealth = fileGrowthHealth,
-            BackupPosture = backupPosture,
-            SecurityHygieneIssues = securityHygieneIssues,
+
+            Tables = schemaMetadata.Tables,
+            Indexes = schemaMetadata.Indexes,
+            ForeignKeys = schemaMetadata.ForeignKeys,
+            Statistics = schemaMetadata.Statistics,
+            IdentityColumns = schemaMetadata.IdentityColumns,
+            Columns = schemaMetadata.Columns,
+            ColumnNullStats = schemaMetadata.ColumnNullStats,
+            TableCompression = schemaMetadata.TableCompression,
+
+            TopResourceIntensiveQueries = performanceMetrics.TopResourceIntensiveQueries,
+            TopWaitStats = performanceMetrics.TopWaitStats,
+            QueryStoreRegressions = performanceMetrics.QueryStoreRegressions,
+            ActiveBlockingSessions = performanceMetrics.ActiveBlockingSessions,
+            DeadlockSummary = performanceMetrics.DeadlockSummary,
+            MissingIndexSignals = performanceMetrics.MissingIndexSignals,
+            IndexUsage = performanceMetrics.IndexUsage,
+            IndexPhysicalStats = performanceMetrics.IndexPhysicalStats,
+            SleepingTransactions = performanceMetrics.SleepingTransactions,
+            MemoryPressure = performanceMetrics.MemoryPressure,
+            FileIoLatency = performanceMetrics.FileIoLatency,
+            PlanCache = performanceMetrics.PlanCache,
+
+            LogHealth = operationalHealth.LogHealth,
+            TempDbPressure = operationalHealth.TempDbPressure,
+            FileGrowthHealth = operationalHealth.FileGrowthHealth,
+            BackupPosture = operationalHealth.BackupPosture,
+            SecurityHygieneIssues = operationalHealth.SecurityHygieneIssues,
+            ServerConfigurations = operationalHealth.ServerConfigurations,
+            LastDbccCheckDbUtc = operationalHealth.LastDbccCheckDb,
+            TempDbConfig = operationalHealth.TempDbConfig,
+            DatabaseOptions = operationalHealth.DatabaseOptions,
+            VolumeStats = operationalHealth.VolumeStats,
+            FailedAgentJobs = operationalHealth.FailedAgentJobs,
+            GlobalTraceFlags = operationalHealth.GlobalTraceFlags,
+
             CollectionWarnings = warnings,
-            Columns = columns,
-            ColumnNullStats = columnNullStats,
-            ServerConfigurations = serverConfigurations,
-            LastDbccCheckDbUtc = lastDbccCheckDb,
-            TempDbConfig = tempDbConfig,
-            SleepingTransactions = sleepingTransactions,
-            MemoryPressure = memoryPressure,
-            FileIoLatency = fileIoLatency,
-            PlanCache = planCache,
-            TableCompression = tableCompression,
-            DatabaseOptions = databaseOptions,
-            VolumeStats = volumeStats,
-            FailedAgentJobs = failedAgentJobs,
-            GlobalTraceFlags = globalTraceFlags,
         };
 
         return ApplyExclusions(snapshot, excludedSchemas, excludedTables);
     }
+
+    private static async Task<SchemaMetadata> CollectSchemaMetadataAsync(
+        SqlConnection connection,
+        AuditProfile profile,
+        List<CollectionWarning> warnings,
+        Action<string> report,
+        CancellationToken cancellationToken)
+    {
+        var includeStatistics = profile == AuditProfile.Deep;
+
+        report("Tables");
+        var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Indexes");
+        var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Table statistics");
+        var statistics = includeStatistics
+            ? await TryReadOptionalListAsync(
+                () => ReadStatisticsAsync(connection, cancellationToken),
+                warnings,
+                "Table Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<StatisticsInfo>)[];
+
+        report("Column metadata");
+        var columns = await TryReadOptionalListAsync(
+            () => ReadColumnsAsync(connection, cancellationToken),
+            warnings,
+            "Column Metadata").ConfigureAwait(false);
+
+        report("Column null statistics");
+        var columnNullStats = profile == AuditProfile.Deep
+            ? await TryReadOptionalListAsync(
+                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
+                warnings,
+                "Column Null Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<ColumnNullStats>)[];
+
+        report("Foreign keys");
+        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Identity columns");
+        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        report("Table compression");
+        var tableCompression = profile == AuditProfile.Deep
+            ? await TryReadOptionalListAsync(
+                () => ReadTableCompressionAsync(connection, cancellationToken),
+                warnings,
+                "Table Compression").ConfigureAwait(false)
+            : (IReadOnlyList<TableCompressionInfo>)[];
+
+        return new SchemaMetadata(
+            tables,
+            indexes,
+            foreignKeys,
+            statistics,
+            identityColumns,
+            columns,
+            columnNullStats,
+            tableCompression);
+    }
+
+    private static async Task<PerformanceMetrics> CollectPerformanceMetricsAsync(
+        SqlConnection connection,
+        AuditProfile profile,
+        List<CollectionWarning> warnings,
+        Action<string> report,
+        CancellationToken cancellationToken)
+    {
+        var includePhysical = profile == AuditProfile.Deep;
+
+        report("Resource-intensive queries");
+        var topResourceIntensiveQueries = await TryReadOptionalListAsync(
+            () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
+            warnings,
+            "Resource-Intensive Queries").ConfigureAwait(false);
+
+        report("Wait statistics");
+        var topWaitStats = await TryReadOptionalListAsync(
+            () => ReadTopWaitStatsAsync(connection, cancellationToken),
+            warnings,
+            "Wait Statistics").ConfigureAwait(false);
+
+        report("Query Store regressions");
+        var queryStoreRegressions = await TryReadOptionalListAsync(
+            () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
+            warnings,
+            "Query Store Regressions").ConfigureAwait(false);
+
+        report("Active blocking sessions");
+        var activeBlockingSessions = await TryReadOptionalListAsync(
+            () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
+            warnings,
+            "Active Blocking Sessions").ConfigureAwait(false);
+
+        report("Deadlock summary");
+        var deadlockSummary = await TryReadOptionalAsync(
+            () => ReadDeadlockSummaryAsync(connection, cancellationToken),
+            warnings,
+            "Deadlock Summary").ConfigureAwait(false);
+
+        report("Missing index signals");
+        var missingIndexSignals = await TryReadOptionalListAsync(
+            () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
+            warnings,
+            "Missing Index Signals").ConfigureAwait(false);
+
+        report("Index usage statistics");
+        var indexUsage = await TryReadOptionalListAsync(
+            () => ReadIndexUsageAsync(connection, cancellationToken),
+            warnings,
+            "Index Usage Statistics").ConfigureAwait(false);
+
+        report("Index physical stats");
+        var indexPhysicalStats = includePhysical
+            ? await TryReadOptionalListAsync(
+                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
+                warnings,
+                "Index Physical Statistics").ConfigureAwait(false)
+            : (IReadOnlyList<IndexPhysicalInfo>)[];
+
+        report("Sleeping transactions");
+        var sleepingTransactions = await TryReadOptionalListAsync(
+            () => ReadSleepingTransactionsAsync(connection, cancellationToken),
+            warnings,
+            "Sleeping Transactions").ConfigureAwait(false);
+
+        report("Memory pressure");
+        var memoryPressure = await TryReadOptionalAsync(
+            () => ReadMemoryPressureAsync(connection, cancellationToken),
+            warnings,
+            "Memory Pressure").ConfigureAwait(false);
+
+        report("File I/O latency");
+        var fileIoLatency = await TryReadOptionalListAsync(
+            () => ReadFileIoLatencyAsync(connection, cancellationToken),
+            warnings,
+            "File I/O Latency").ConfigureAwait(false);
+
+        report("Plan cache");
+        var planCache = await TryReadOptionalAsync(
+            () => ReadPlanCacheAsync(connection, cancellationToken),
+            warnings,
+            "Plan Cache").ConfigureAwait(false);
+
+        return new PerformanceMetrics(
+            topResourceIntensiveQueries,
+            topWaitStats,
+            queryStoreRegressions,
+            activeBlockingSessions,
+            deadlockSummary,
+            missingIndexSignals,
+            indexUsage,
+            indexPhysicalStats,
+            sleepingTransactions,
+            memoryPressure,
+            fileIoLatency,
+            planCache);
+    }
+
+    private static async Task<OperationalHealth> CollectOperationalHealthAsync(
+        SqlConnection connection,
+        List<CollectionWarning> warnings,
+        Action<string> report,
+        CancellationToken cancellationToken)
+    {
+        report("Log health");
+        var logHealth = await TryReadOptionalAsync(
+            () => ReadLogHealthAsync(connection, cancellationToken),
+            warnings,
+            "Log Health").ConfigureAwait(false);
+
+        report("TempDB pressure");
+        var tempDbPressure = await TryReadOptionalAsync(
+            () => ReadTempDbPressureAsync(connection, cancellationToken),
+            warnings,
+            "TempDB Pressure").ConfigureAwait(false);
+
+        report("File growth settings");
+        var fileGrowthHealth = await TryReadOptionalListAsync(
+            () => ReadFileGrowthHealthAsync(connection, cancellationToken),
+            warnings,
+            "File Growth Settings").ConfigureAwait(false);
+
+        report("Backup posture");
+        var backupPosture = await TryReadOptionalAsync(
+            () => ReadBackupPostureAsync(connection, cancellationToken),
+            warnings,
+            "Backup Posture").ConfigureAwait(false);
+
+        report("Security hygiene");
+        var securityHygieneIssues = await TryReadOptionalListAsync(
+            () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken),
+            warnings,
+            "Security Hygiene").ConfigureAwait(false);
+
+        report("Server configurations");
+        var serverConfigurations = await TryReadOptionalListAsync(
+            () => ReadServerConfigurationsAsync(connection, cancellationToken),
+            warnings,
+            "Server Configurations").ConfigureAwait(false);
+
+        report("Integrity check history");
+        var lastDbccCheckDb = await TryReadOptionalStructAsync(
+            () => ReadLastDbccCheckDbAsync(connection, cancellationToken),
+            warnings,
+            "Integrity Check History").ConfigureAwait(false);
+
+        report("TempDB configuration");
+        var tempDbConfig = await TryReadOptionalAsync(
+            () => ReadTempDbConfigAsync(connection, cancellationToken),
+            warnings,
+            "TempDB Configuration").ConfigureAwait(false);
+
+        report("Database options");
+        var databaseOptions = await TryReadOptionalAsync(
+            () => ReadDatabaseOptionsAsync(connection, cancellationToken),
+            warnings,
+            "Database Options").ConfigureAwait(false);
+
+        report("Volume stats");
+        var volumeStats = await TryReadOptionalListAsync(
+            () => ReadVolumeStatsAsync(connection, cancellationToken),
+            warnings,
+            "Volume Stats").ConfigureAwait(false);
+
+        report("SQL Agent job failures");
+        var failedAgentJobs = await TryReadOptionalListAsync(
+            () => ReadFailedAgentJobsAsync(connection, cancellationToken),
+            warnings,
+            "SQL Agent Jobs").ConfigureAwait(false);
+
+        report("Global trace flags");
+        var globalTraceFlags = await TryReadOptionalListAsync(
+            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken),
+            warnings,
+            "Global Trace Flags").ConfigureAwait(false);
+
+        return new OperationalHealth(
+            logHealth,
+            tempDbPressure,
+            fileGrowthHealth,
+            backupPosture,
+            securityHygieneIssues,
+            serverConfigurations,
+            lastDbccCheckDb,
+            tempDbConfig,
+            databaseOptions,
+            volumeStats,
+            failedAgentJobs,
+            globalTraceFlags);
+    }
+
+    private sealed record SchemaMetadata(
+        IReadOnlyList<TableInfo> Tables,
+        IReadOnlyList<IndexInfo> Indexes,
+        IReadOnlyList<ForeignKeyInfo> ForeignKeys,
+        IReadOnlyList<StatisticsInfo> Statistics,
+        IReadOnlyList<IdentityColumnInfo> IdentityColumns,
+        IReadOnlyList<ColumnInfo> Columns,
+        IReadOnlyList<ColumnNullStats> ColumnNullStats,
+        IReadOnlyList<TableCompressionInfo> TableCompression);
+
+    private sealed record PerformanceMetrics(
+        IReadOnlyList<ResourceIntensiveQueryInfo> TopResourceIntensiveQueries,
+        IReadOnlyList<WaitStatInfo> TopWaitStats,
+        IReadOnlyList<QueryStoreRegressionInfo> QueryStoreRegressions,
+        IReadOnlyList<BlockingSessionInfo> ActiveBlockingSessions,
+        DeadlockSummaryInfo? DeadlockSummary,
+        IReadOnlyList<MissingIndexSignalInfo> MissingIndexSignals,
+        IReadOnlyList<IndexUsageInfo> IndexUsage,
+        IReadOnlyList<IndexPhysicalInfo> IndexPhysicalStats,
+        IReadOnlyList<SleepingTransactionInfo> SleepingTransactions,
+        MemoryPressureInfo? MemoryPressure,
+        IReadOnlyList<FileIoLatencyInfo> FileIoLatency,
+        PlanCacheInfo? PlanCache);
+
+    private sealed record OperationalHealth(
+        LogHealthInfo? LogHealth,
+        TempDbPressureInfo? TempDbPressure,
+        IReadOnlyList<FileGrowthHealthInfo> FileGrowthHealth,
+        BackupPostureInfo? BackupPosture,
+        IReadOnlyList<SecurityHygieneIssueInfo> SecurityHygieneIssues,
+        IReadOnlyList<ServerConfigInfo> ServerConfigurations,
+        DateTimeOffset? LastDbccCheckDb,
+        TempDbConfigInfo? TempDbConfig,
+        DatabaseOptionsInfo? DatabaseOptions,
+        IReadOnlyList<VolumeInfo> VolumeStats,
+        IReadOnlyList<FailedAgentJobInfo> FailedAgentJobs,
+        IReadOnlyList<GlobalTraceFlagInfo> GlobalTraceFlags);
 
     private static DatabaseSnapshot ApplyExclusions(
         DatabaseSnapshot snapshot,
@@ -633,6 +744,30 @@ public sealed class SqlServerSnapshotCollector
             cancellationToken).ConfigureAwait(false);
     }
 
+    private sealed record ForeignKeyColumnRow(
+        int ObjectId,
+        string FkName,
+        string ParentSchema,
+        string ParentTable,
+        string ReferencedSchema,
+        string ReferencedTable,
+        bool IsDisabled,
+        bool IsNotTrusted,
+        bool HasSupportingIndex,
+        string DeleteAction,
+        string UpdateAction,
+        int ConstraintColumnId,
+        string ParentColumn,
+        string ParentType,
+        short ParentMaxLength,
+        byte ParentPrecision,
+        byte ParentScale,
+        string ReferencedColumn,
+        string ReferencedType,
+        short ReferencedMaxLength,
+        byte ReferencedPrecision,
+        byte ReferencedScale);
+
     private static async Task<IReadOnlyList<ForeignKeyInfo>> ReadForeignKeysAsync(SqlConnection connection, CancellationToken cancellationToken)
     {
         const string sql = """
@@ -643,10 +778,6 @@ public sealed class SqlServerSnapshotCollector
                 pt.name AS parent_table,
                 rs.name AS referenced_schema,
                 rt.name AS referenced_table,
-                cols.parent_columns,
-                cols.referenced_columns,
-                cols.parent_types,
-                cols.referenced_types,
                 fk.is_disabled,
                 fk.is_not_trusted,
                 CASE WHEN EXISTS
@@ -660,135 +791,118 @@ public sealed class SqlServerSnapshotCollector
                       AND NOT EXISTS
                       (
                           SELECT 1
-                          FROM sys.foreign_key_columns fkc
+                          FROM sys.foreign_key_columns fkc_idx
                           LEFT JOIN sys.index_columns ic
                               ON ic.object_id = i.object_id
                              AND ic.index_id = i.index_id
-                             AND ic.key_ordinal = fkc.constraint_column_id
-                             AND ic.column_id = fkc.parent_column_id
-                          WHERE fkc.constraint_object_id = fk.object_id
+                             AND ic.key_ordinal = fkc_idx.constraint_column_id
+                             AND ic.column_id = fkc_idx.parent_column_id
+                          WHERE fkc_idx.constraint_object_id = fk.object_id
                             AND ic.index_column_id IS NULL
                       )
                 ) THEN 1 ELSE 0 END AS has_supporting_index,
                 fk.delete_referential_action_desc AS delete_action,
-                fk.update_referential_action_desc AS update_action
+                fk.update_referential_action_desc AS update_action,
+                fkc.constraint_column_id,
+                pc.name AS parent_column,
+                ptype.name AS parent_type,
+                pc.max_length AS parent_max_length,
+                pc.precision AS parent_precision,
+                pc.scale AS parent_scale,
+                rc.name AS referenced_column,
+                rtype.name AS referenced_type,
+                rc.max_length AS referenced_max_length,
+                rc.precision AS referenced_precision,
+                rc.scale AS referenced_scale
             FROM sys.foreign_keys fk
             INNER JOIN sys.tables pt ON pt.object_id = fk.parent_object_id
             INNER JOIN sys.schemas ps ON ps.schema_id = pt.schema_id
             INNER JOIN sys.tables rt ON rt.object_id = fk.referenced_object_id
             INNER JOIN sys.schemas rs ON rs.schema_id = rt.schema_id
-            CROSS APPLY
-            (
-                SELECT
-                    STUFF(
-                        (
-                            SELECT N',' + QUOTENAME(pc.name)
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns pc
-                                ON pc.object_id = fkc2.parent_object_id
-                               AND pc.column_id = fkc2.parent_column_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS parent_columns,
-                    STUFF(
-                        (
-                            SELECT N',' + QUOTENAME(rc.name)
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns rc
-                                ON rc.object_id = fkc2.referenced_object_id
-                               AND rc.column_id = fkc2.referenced_column_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS referenced_columns,
-                    STUFF(
-                        (
-                            SELECT N',' + CONCAT(ptype.name, N'(',
-                                CASE
-                                    WHEN ptype.name IN (N'nchar', N'nvarchar')
-                                        THEN CASE WHEN pc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), pc.max_length / 2) END
-                                    WHEN ptype.name IN (N'char', N'varchar', N'binary', N'varbinary')
-                                        THEN CASE WHEN pc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), pc.max_length) END
-                                    WHEN ptype.name IN (N'decimal', N'numeric')
-                                        THEN CONCAT(CONVERT(nvarchar(10), pc.precision), N',', CONVERT(nvarchar(10), pc.scale))
-                                    WHEN ptype.name IN (N'datetime2', N'datetimeoffset', N'time')
-                                        THEN CONVERT(nvarchar(10), pc.scale)
-                                    ELSE N''
-                                END,
-                            N')')
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns pc
-                                ON pc.object_id = fkc2.parent_object_id
-                               AND pc.column_id = fkc2.parent_column_id
-                            INNER JOIN sys.types ptype ON ptype.user_type_id = pc.user_type_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS parent_types,
-                    STUFF(
-                        (
-                            SELECT N',' + CONCAT(rtype.name, N'(',
-                                CASE
-                                    WHEN rtype.name IN (N'nchar', N'nvarchar')
-                                        THEN CASE WHEN rc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), rc.max_length / 2) END
-                                    WHEN rtype.name IN (N'char', N'varchar', N'binary', N'varbinary')
-                                        THEN CASE WHEN rc.max_length = -1 THEN N'max' ELSE CONVERT(nvarchar(10), rc.max_length) END
-                                    WHEN rtype.name IN (N'decimal', N'numeric')
-                                        THEN CONCAT(CONVERT(nvarchar(10), rc.precision), N',', CONVERT(nvarchar(10), rc.scale))
-                                    WHEN rtype.name IN (N'datetime2', N'datetimeoffset', N'time')
-                                        THEN CONVERT(nvarchar(10), rc.scale)
-                                    ELSE N''
-                                END,
-                            N')')
-                            FROM sys.foreign_key_columns fkc2
-                            INNER JOIN sys.columns rc
-                                ON rc.object_id = fkc2.referenced_object_id
-                               AND rc.column_id = fkc2.referenced_column_id
-                            INNER JOIN sys.types rtype ON rtype.user_type_id = rc.user_type_id
-                            WHERE fkc2.constraint_object_id = fk.object_id
-                            ORDER BY fkc2.constraint_column_id
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS referenced_types
-            ) cols
+            INNER JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
+            INNER JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
+            INNER JOIN sys.types ptype ON ptype.user_type_id = pc.user_type_id
+            INNER JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
+            INNER JOIN sys.types rtype ON rtype.user_type_id = rc.user_type_id
             WHERE pt.is_ms_shipped = 0
               AND rt.is_ms_shipped = 0
+            ORDER BY fk.object_id, fkc.constraint_column_id
         """;
 
-        return await ReadListAsync(connection, sql,
-            reader => new ForeignKeyInfo(
+        var rows = await ReadListAsync(connection, sql,
+            reader => new ForeignKeyColumnRow(
                 SqlRead.Int(reader, "object_id"),
                 SqlRead.String(reader, "fk_name"),
                 SqlRead.String(reader, "parent_schema"),
                 SqlRead.String(reader, "parent_table"),
                 SqlRead.String(reader, "referenced_schema"),
                 SqlRead.String(reader, "referenced_table"),
-                SqlRead.String(reader, "parent_columns"),
-                SqlRead.String(reader, "referenced_columns"),
-                SqlRead.String(reader, "parent_types"),
-                SqlRead.String(reader, "referenced_types"),
                 SqlRead.Bool(reader, "is_disabled"),
                 SqlRead.Bool(reader, "is_not_trusted"),
                 SqlRead.Bool(reader, "has_supporting_index"),
                 SqlRead.String(reader, "delete_action"),
-                SqlRead.String(reader, "update_action")),
+                SqlRead.String(reader, "update_action"),
+                SqlRead.Int(reader, "constraint_column_id"),
+                SqlRead.String(reader, "parent_column"),
+                SqlRead.String(reader, "parent_type"),
+                Convert.ToInt16(reader["parent_max_length"]),
+                Convert.ToByte(reader["parent_precision"]),
+                Convert.ToByte(reader["parent_scale"]),
+                SqlRead.String(reader, "referenced_column"),
+                SqlRead.String(reader, "referenced_type"),
+                Convert.ToInt16(reader["referenced_max_length"]),
+                Convert.ToByte(reader["referenced_precision"]),
+                Convert.ToByte(reader["referenced_scale"])),
             cancellationToken).ConfigureAwait(false);
+
+        return rows
+            .GroupBy(r => r.ObjectId)
+            .Select(g =>
+            {
+                var first = g.First();
+                return new ForeignKeyInfo(
+                    first.ObjectId,
+                    first.FkName,
+                    first.ParentSchema,
+                    first.ParentTable,
+                    first.ReferencedSchema,
+                    first.ReferencedTable,
+                    string.Join(",", g.Select(r => $"[{r.ParentColumn.Replace("]", "]]", StringComparison.Ordinal)}]")),
+                    string.Join(",", g.Select(r => $"[{r.ReferencedColumn.Replace("]", "]]", StringComparison.Ordinal)}]")),
+                    string.Join(",", g.Select(r => FormatType(r.ParentType, r.ParentMaxLength, r.ParentPrecision, r.ParentScale))),
+                    string.Join(",", g.Select(r => FormatType(r.ReferencedType, r.ReferencedMaxLength, r.ReferencedPrecision, r.ReferencedScale))),
+                    first.IsDisabled,
+                    first.IsNotTrusted,
+                    first.HasSupportingIndex,
+                    first.DeleteAction,
+                    first.UpdateAction);
+            })
+            .ToArray();
+    }
+
+    private static string FormatType(string name, short maxLength, byte precision, byte scale)
+    {
+        if (name is "nchar" or "nvarchar")
+        {
+            return $"{name}({(maxLength == -1 ? "max" : (maxLength / 2).ToString(CultureInfo.InvariantCulture))})";
+        }
+
+        if (name is "char" or "varchar" or "binary" or "varbinary")
+        {
+            return $"{name}({(maxLength == -1 ? "max" : maxLength.ToString(CultureInfo.InvariantCulture))})";
+        }
+
+        if (name is "decimal" or "numeric")
+        {
+            return $"{name}({precision},{scale})";
+        }
+
+        if (name is "datetime2" or "datetimeoffset" or "time")
+        {
+            return $"{name}({scale})";
+        }
+
+        return name;
     }
 
     private static async Task<IReadOnlyList<StatisticsInfo>> ReadStatisticsAsync(SqlConnection connection, CancellationToken cancellationToken)
@@ -1489,6 +1603,7 @@ public sealed class SqlServerSnapshotCollector
             .GroupBy(c => c.ObjectId);
 
         var results = new List<ColumnNullStats>();
+        var sqlBuilder = new SqlCommandBuilder();
 
         foreach (var chunk in nullableByTable.Chunk(200))
         {
@@ -1498,11 +1613,14 @@ public sealed class SqlServerSnapshotCollector
             var sb = new System.Text.StringBuilder();
             var firstPart = true;
 
+            await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
+            var paramIndex = 0;
+
             foreach (var group in chunk)
             {
                 var cols = group.Take(maxColumnsPerTable).ToArray();
                 var first = cols[0];
-                var qualifiedTable = $"[{EscapeBracket(first.SchemaName)}].[{EscapeBracket(first.TableName)}]";
+                var qualifiedTable = $"{sqlBuilder.QuoteIdentifier(first.SchemaName)}.{sqlBuilder.QuoteIdentifier(first.TableName)}";
 
                 foreach (var c in cols)
                 {
@@ -1515,8 +1633,11 @@ public sealed class SqlServerSnapshotCollector
                     }
                     firstPart = false;
 
-                    sb.Append("SELECT ").Append(first.ObjectId).Append(" AS object_id, N'").Append(EscapeSqlString(c.ColumnName)).Append("' AS column_name, ")
-                      .Append("CASE WHEN EXISTS(SELECT 1 FROM ").Append(qualifiedTable).Append(" WITH (NOLOCK) WHERE [").Append(EscapeBracket(c.ColumnName)).Append("] IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+                    var paramName = $"@col_{paramIndex++}";
+                    command.Parameters.AddWithValue(paramName, c.ColumnName);
+
+                    sb.Append("SELECT ").Append(first.ObjectId).Append(" AS object_id, ").Append(paramName).Append(" AS column_name, ")
+                      .Append("CASE WHEN EXISTS(SELECT 1 FROM ").Append(qualifiedTable).Append(" WITH (NOLOCK) WHERE ").Append(sqlBuilder.QuoteIdentifier(c.ColumnName)).Append(" IS NULL) THEN 1 ELSE 0 END AS has_nulls");
                 }
             }
 
@@ -1525,9 +1646,8 @@ public sealed class SqlServerSnapshotCollector
                 continue;
             }
 
-            var sql = $"SELECT object_id, column_name FROM ({sb}) x WHERE has_nulls = 0";
+            command.CommandText = $"SELECT object_id, column_name FROM ({sb}) x WHERE has_nulls = 0";
 
-            await using var command = new SqlCommand(sql, connection) { CommandTimeout = 60 };
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -1550,8 +1670,6 @@ public sealed class SqlServerSnapshotCollector
 
         return results;
     }
-
-    private static string EscapeBracket(string name) => name.Replace("]", "]]", StringComparison.Ordinal);
 
     private static string FormatColumnDataType(ColumnInfo column)
     {
@@ -1584,8 +1702,6 @@ public sealed class SqlServerSnapshotCollector
 
         return dataType;
     }
-
-    private static string EscapeSqlString(string value) => value.Replace("'", "''", StringComparison.Ordinal);
 
     private static async Task<IReadOnlyList<SecurityHygieneIssueInfo>> ReadSecurityHygieneIssuesAsync(
         SqlConnection connection,
