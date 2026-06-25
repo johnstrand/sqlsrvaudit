@@ -315,7 +315,7 @@ internal sealed class TempDbFileSizeEqualityCheck : IHealthCheck
                 Impact = "Uneven allocation reduces the contention benefit of having multiple TempDB files.",
                 Recommendation = "Resize all TempDB data files to be equal in size and set equal autogrowth.",
                 ServiceWindow = ServiceWindowAdvisor.No("Resizing TempDB files does not require a service window, but do this during low-activity periods."),
-                FixScript = "-- TODO: Replace <target_size_mb> with the desired equal size.\n-- Resize all files:\nALTER DATABASE tempdb MODIFY FILE (NAME = N'tempdev', SIZE = <target_size_mb>MB);",
+                FixScript = $"-- Resize all files to the maximum existing file size:\nALTER DATABASE tempdb MODIFY FILE (NAME = N'tempdev', SIZE = {maxSize.ToString("F0", CultureInfo.InvariantCulture)}MB);",
                 Evidence = [
                     new FindingEvidence("MinFileSizeMb", minSize.ToString("F0", CultureInfo.InvariantCulture)),
                     new FindingEvidence("MaxFileSizeMb", maxSize.ToString("F0", CultureInfo.InvariantCulture)),
