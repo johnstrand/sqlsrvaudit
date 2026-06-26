@@ -880,9 +880,6 @@ public sealed class SqlServerSnapshotCollector
             .ToArray();
     }
 
-    private static string EscapeBracket(string identifier) =>
-        identifier.Replace("]", "]]", StringComparison.Ordinal);
-
     private static string FormatType(string name, short maxLength, byte precision, byte scale)
     {
         if (name is "nchar" or "nvarchar")
@@ -1619,6 +1616,9 @@ public sealed class SqlServerSnapshotCollector
             await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
             var paramIndex = 0;
 
+            await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
+            var paramIndex = 0;
+
             foreach (var group in chunk)
             {
                 var cols = group.Take(maxColumnsPerTable).ToArray();
@@ -1630,17 +1630,11 @@ public sealed class SqlServerSnapshotCollector
                     var key = $"{first.ObjectId}:{c.ColumnName}";
                     columnMap[key] = c;
 
-                    if (!firstPart)
-                    {
-                        sb.Append(" UNION ALL ");
-                    }
-                    firstPart = false;
-
                     var paramName = $"@col_{paramIndex++}";
                     command.Parameters.AddWithValue(paramName, c.ColumnName);
 
-                    sb.Append("SELECT ").Append(first.ObjectId).Append(" AS object_id, ").Append(paramName).Append(" AS column_name, ")
-                      .Append("CASE WHEN EXISTS(SELECT 1 FROM ").Append(qualifiedTable).Append(" WITH (NOLOCK) WHERE ").Append(sqlBuilder.QuoteIdentifier(c.ColumnName)).Append(" IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+                    parts.Add($"SELECT {first.ObjectId} AS object_id, {paramName} AS column_name, " +
+                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE {sqlBuilder.QuoteIdentifier(c.ColumnName)} IS NULL) THEN 1 ELSE 0 END AS has_nulls");
                 }
             }
 
@@ -1649,7 +1643,7 @@ public sealed class SqlServerSnapshotCollector
                 continue;
             }
 
-            command.CommandText = $"SELECT object_id, column_name FROM ({sb}) x WHERE has_nulls = 0";
+            command.CommandText = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
 
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
