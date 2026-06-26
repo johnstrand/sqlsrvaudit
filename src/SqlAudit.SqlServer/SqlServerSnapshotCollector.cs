@@ -1605,12 +1605,16 @@ public sealed class SqlServerSnapshotCollector
         var results = new List<ColumnNullStats>();
         var sqlBuilder = new SqlCommandBuilder();
 
-        foreach (var chunk in nullableByTable.Chunk(50))
+        foreach (var chunk in nullableByTable.Chunk(200))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var parts = new List<string>();
             var columnMap = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
+            var sb = new System.Text.StringBuilder();
+            var firstPart = true;
+
+            await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
+            var paramIndex = 0;
 
             await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
             var paramIndex = 0;
@@ -1634,7 +1638,7 @@ public sealed class SqlServerSnapshotCollector
                 }
             }
 
-            if (parts.Count == 0)
+            if (sb.Length == 0)
             {
                 continue;
             }
