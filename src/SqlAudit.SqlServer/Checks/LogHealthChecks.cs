@@ -46,7 +46,7 @@ internal sealed class HighVlfCountCheck : IHealthCheck
                     -- Step 2: Shrink the log:
                     DBCC SHRINKFILE (<log_logical_name>, 1);
                     -- Step 3: Expand to a single large VLF (use a size that is a multiple of 512 MB for optimal VLF count):
-                    ALTER DATABASE [{context.Snapshot.DatabaseName}] MODIFY FILE (NAME = N'<log_logical_name>', SIZE = <target_size_mb>MB);
+                    ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)} MODIFY FILE (NAME = N'<log_logical_name>', SIZE = <target_size_mb>MB);
                     """,
                 Evidence =
                 [

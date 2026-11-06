@@ -778,7 +778,7 @@ internal sealed class StaleStatisticsCheck : IHealthCheck
                 Title = "Statistics modification count exceeds threshold",
                 Category = Category,
                 Severity = stat.ModificationCounter > stat.Rows ? AuditSeverity.High : AuditSeverity.Medium,
-                DatabaseObject = $"{tableName}.[{stat.StatsName}]",
+                DatabaseObject = $"{tableName}.{SqlName.Statistic(stat.StatsName)}",
                 Description = "Statistics have changed enough that estimates may be stale.",
                 Impact = "Plan quality can degrade due to cardinality misestimation.",
                 Recommendation = "Update statistics; use FULLSCAN for critical large objects when needed.",
@@ -788,7 +788,7 @@ internal sealed class StaleStatisticsCheck : IHealthCheck
                 FixScript = $"""
                     -- RequiresServiceWindow: false
                     -- Reason: Statistics update is typically online maintenance.
-                    UPDATE STATISTICS {tableName} [{stat.StatsName}] WITH FULLSCAN;
+                    UPDATE STATISTICS {tableName} {SqlName.Statistic(stat.StatsName)} WITH FULLSCAN;
                     """,
                 Evidence =
                 [
@@ -873,7 +873,7 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
                     Title = "Statistics has NORECOMPUTE enabled",
                     Category = Category,
                     Severity = AuditSeverity.Medium,
-                    DatabaseObject = $"{tableName}.[{stat.StatsName}]",
+                    DatabaseObject = $"{tableName}.{SqlName.Statistic(stat.StatsName)}",
                     Description = "Statistic is configured to skip automatic recomputation.",
                     Impact = "Cardinality estimate drift may accumulate unnoticed.",
                     Recommendation = "Re-evaluate NORECOMPUTE and enable auto recompute when possible.",
@@ -883,7 +883,7 @@ internal sealed class StatisticsConfigurationCheck : IHealthCheck
                     FixScript = $"""
                         -- RequiresServiceWindow: false
                         -- Reason: Statistics option adjustment is low-risk maintenance.
-                        UPDATE STATISTICS {tableName} [{stat.StatsName}] WITH RESAMPLE;
+                        UPDATE STATISTICS {tableName} {SqlName.Statistic(stat.StatsName)} WITH RESAMPLE;
                         """,
                 };
             }));
@@ -974,6 +974,7 @@ internal sealed class IdentityExhaustionCheck : IHealthCheck
                      .Where(i => i.UsagePercent >= (decimal)context.Options.IdentityUsageWarningPercent))
         {
             var tableName = SqlName.Table(identity.SchemaName, identity.TableName);
+            var quotedColumn = SqlName.Column(identity.ColumnName);
             var severity = identity.UsagePercent >= (decimal)context.Options.IdentityUsageCriticalPercent
                 ? AuditSeverity.Critical
                 : AuditSeverity.High;
@@ -984,7 +985,7 @@ internal sealed class IdentityExhaustionCheck : IHealthCheck
                 Title = "Identity column nearing max value",
                 Category = Category,
                 Severity = severity,
-                DatabaseObject = $"{tableName}.[{identity.ColumnName}]",
+                DatabaseObject = $"{tableName}.{quotedColumn}",
                 Description = "Identity usage is approaching the data type limit.",
                 Impact = "Inserts can fail once identity reaches max value.",
                 Recommendation = "Plan migration to larger key type or reseed strategy before exhaustion.",
@@ -994,9 +995,9 @@ internal sealed class IdentityExhaustionCheck : IHealthCheck
                 FixScript = $"""
                     -- RequiresServiceWindow: true
                     -- Reason: Preventive fix usually requires key migration and coordinated deployment.
-                    -- Manual action required for {tableName}.[{identity.ColumnName}] ({identity.DataType}).
+                    -- Manual action required for {tableName}.{quotedColumn} ({identity.DataType}).
                     -- Example immediate mitigation (use carefully):
-                    -- DBCC CHECKIDENT ('{tableName}', RESEED, <safe_seed_value>);
+                    -- DBCC CHECKIDENT ({SqlName.StringLiteral(tableName)}, RESEED, <safe_seed_value>);
                     """,
                 Evidence =
                 [

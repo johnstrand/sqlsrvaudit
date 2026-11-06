@@ -27,7 +27,7 @@ internal sealed class NullableColumnWithNoNullsCheck : IHealthCheck
             .Select(col =>
             {
                 var tableName = SqlName.Table(col.SchemaName, col.TableName);
-                var quotedColumn = $"[{col.ColumnName}]";
+                var quotedColumn = SqlName.Column(col.ColumnName);
                 tableRowCounts.TryGetValue(col.ObjectId, out var rowCount);
 
                 return new AuditFinding
@@ -88,7 +88,7 @@ internal sealed class OversizedStringColumnCheck : IHealthCheck
             }
 
             var tableName = SqlName.Table(col.SchemaName, col.TableName);
-            var quotedColumn = $"[{col.ColumnName}]";
+            var quotedColumn = SqlName.Column(col.ColumnName);
 
             findings.Add(new AuditFinding
             {

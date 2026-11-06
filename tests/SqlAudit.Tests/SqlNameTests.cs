@@ -20,6 +20,15 @@ public sealed class SqlNameTests
     }
 
     [Fact]
+    public void DatabaseColumnStatisticStringLiteral_EscapeCorrectly()
+    {
+        Assert.Equal("[My]]Db]", SqlName.Database("My]Db"));
+        Assert.Equal("[Col]]Name]", SqlName.Column("Col]Name"));
+        Assert.Equal("[Stat]]Name]", SqlName.Statistic("Stat]Name"));
+        Assert.Equal("N'O''Reilly'", SqlName.StringLiteral("O'Reilly"));
+    }
+
+    [Fact]
     public void ObjectNameSuffix_NormalizesCharactersAndTruncates()
     {
         var normalized = SqlName.ObjectNameSuffix("Book Backup-2024]");

@@ -2,12 +2,20 @@ namespace SqlAudit.SqlServer;
 
 internal static class SqlName
 {
+    public static string Database(string databaseName) => $"[{Escape(databaseName)}]";
+
     public static string Table(string schemaName, string tableName) =>
         $"[{Escape(schemaName)}].[{Escape(tableName)}]";
 
     public static string Index(string indexName) => $"[{Escape(indexName)}]";
 
     public static string Constraint(string constraintName) => $"[{Escape(constraintName)}]";
+
+    public static string Column(string columnName) => $"[{Escape(columnName)}]";
+
+    public static string Statistic(string statName) => $"[{Escape(statName)}]";
+
+    public static string StringLiteral(string value) => $"N'{value.Replace("'", "''", StringComparison.Ordinal)}'";
 
     public static string ObjectNameSuffix(string name)
     {

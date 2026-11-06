@@ -33,7 +33,7 @@ internal sealed class AutoShrinkCheck : IHealthCheck
                 Impact = "AUTO_SHRINK causes index fragmentation by compacting data, then the database immediately regrows as data is inserted, causing repeated shrink-grow cycles that waste I/O and CPU. This is identified in the Microsoft documentation as harmful.",
                 Recommendation = "Disable AUTO_SHRINK immediately. Only shrink files manually when there is a genuine permanent reduction in database size, followed by an index rebuild.",
                 ServiceWindow = ServiceWindowAdvisor.No("Disabling AUTO_SHRINK takes effect immediately."),
-                FixScript = $"ALTER DATABASE [{context.Snapshot.DatabaseName}] SET AUTO_SHRINK OFF;",
+                FixScript = $"ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)} SET AUTO_SHRINK OFF;",
                 Evidence =
                 [
                     new FindingEvidence("AutoShrink", "ON"),
@@ -72,7 +72,7 @@ internal sealed class AutoCloseCheck : IHealthCheck
                 Impact = "Every new connection incurs a cold-start penalty: the entire database must be opened, plans must be recompiled, and buffer pool must be re-warmed. This can cause severe latency spikes on reconnect.",
                 Recommendation = "Disable AUTO_CLOSE. It is primarily a legacy option intended for desktop/file-based scenarios.",
                 ServiceWindow = ServiceWindowAdvisor.No("Disabling AUTO_CLOSE takes effect immediately."),
-                FixScript = $"ALTER DATABASE [{context.Snapshot.DatabaseName}] SET AUTO_CLOSE OFF;",
+                FixScript = $"ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)} SET AUTO_CLOSE OFF;",
                 Evidence =
                 [
                     new FindingEvidence("AutoClose", "ON"),
@@ -116,7 +116,7 @@ internal sealed class PageVerifyCheck : IHealthCheck
                 Impact = "Silent data corruption can go undetected until a query returns wrong results or a restore fails. Without checksums, DBCC CHECKDB cannot detect all forms of corruption.",
                 Recommendation = "Enable PAGE_VERIFY CHECKSUM. This is the default for new databases and should be considered mandatory for any production or important database.",
                 ServiceWindow = ServiceWindowAdvisor.No("Changing PAGE_VERIFY takes effect on new page writes. No restart required."),
-                FixScript = $"ALTER DATABASE [{context.Snapshot.DatabaseName}] SET PAGE_VERIFY CHECKSUM;",
+                FixScript = $"ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)} SET PAGE_VERIFY CHECKSUM;",
                 Evidence =
                 [
                     new FindingEvidence("CurrentPageVerify", opts.PageVerify),
@@ -160,11 +160,14 @@ internal sealed class RcsiAdvisoryCheck : IHealthCheck
                 Description = $"RCSI is disabled and the database currently has {context.Snapshot.ActiveBlockingSessions.Count} blocking session(s). RCSI eliminates most reader-writer blocking by providing readers with a consistent snapshot of data without taking shared locks.",
                 Impact = "Without RCSI, reads block writes and writes block reads under the default READ COMMITTED isolation level, leading to contention and wait-time.",
                 Recommendation = "Enabling RCSI is an architectural decision that requires careful testing. However, it dramatically reduces read-write contention for OLTP workloads. Enabling requires setting the database to single-user mode briefly.",
-                ServiceWindow = ServiceWindowAdvisor.No("Enabling RCSI requires a brief single-user mode transition, but the setting itself is low-risk."),
+                ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
+                    AuditOperationRisk.MetadataOnly,
+                    "Enabling RCSI requires a brief single-user mode transition to disconnect active users."),
                 FixScript = $"""
                     -- Review this advisory carefully before enabling RCSI.
+                    -- RequiresServiceWindow: true
                     -- Enabling RCSI will briefly put the database in SINGLE_USER mode.
-                    ALTER DATABASE [{context.Snapshot.DatabaseName}] SET READ_COMMITTED_SNAPSHOT ON;
+                    ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)} SET READ_COMMITTED_SNAPSHOT ON;
                     """,
                 Evidence =
                 [
@@ -211,7 +214,7 @@ internal sealed class QueryStoreDisabledCheck : IHealthCheck
                 Recommendation = "Enable Query Store with appropriate data retention and size limits. The default settings are a good starting point for most databases.",
                 ServiceWindow = ServiceWindowAdvisor.No("Enabling Query Store is online and non-blocking."),
                 FixScript = $"""
-                    ALTER DATABASE [{context.Snapshot.DatabaseName}]
+                    ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)}
                     SET QUERY_STORE = ON (
                         OPERATION_MODE = READ_WRITE,
                         CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 30),
@@ -266,7 +269,7 @@ internal sealed class QueryStoreReadOnlyCheck : IHealthCheck
                 ServiceWindow = ServiceWindowAdvisor.No("Resizing Query Store and switching to READ_WRITE is online."),
                 FixScript = $"""
                     -- Increase Query Store max size and re-enable READ_WRITE:
-                    ALTER DATABASE [{context.Snapshot.DatabaseName}]
+                    ALTER DATABASE {SqlName.Database(context.Snapshot.DatabaseName)}
                     SET QUERY_STORE (
                         MAX_STORAGE_SIZE_MB = 2048,
                         CLEANUP_POLICY = (STALE_QUERY_THRESHOLD_DAYS = 14),
