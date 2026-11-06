@@ -17,7 +17,24 @@ public sealed class AuditReport
 
     public required DateTimeOffset CapturedAtUtc { get; init; }
 
-    public required IReadOnlyList<AuditFinding> Findings { get; init; }
+    private readonly IReadOnlyList<AuditFinding> _findings = [];
+    private IReadOnlyDictionary<AuditSeverity, int>? _severityCounts;
+    private IReadOnlyDictionary<string, int>? _categoryCounts;
+
+    public required IReadOnlyList<AuditFinding> Findings
+    {
+        get => _findings;
+        init
+        {
+            _findings = value;
+            _severityCounts = value
+                .GroupBy(f => f.Severity)
+                .ToDictionary(g => g.Key, g => g.Count());
+            _categoryCounts = value
+                .GroupBy(f => f.Category, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        }
+    }
 
     public IReadOnlyList<CheckExecutionResult> CheckExecutions { get; init; } = [];
 
@@ -77,11 +94,11 @@ public sealed class AuditReport
 
     public SuppressionSummary SuppressionSummary { get; init; } = SuppressionSummary.None;
 
-    public IReadOnlyDictionary<AuditSeverity, int> SeverityCounts => Findings
+    public IReadOnlyDictionary<AuditSeverity, int> SeverityCounts => _severityCounts ??= Findings
         .GroupBy(f => f.Severity)
         .ToDictionary(g => g.Key, g => g.Count());
 
-    public IReadOnlyDictionary<string, int> CategoryCounts => Findings
+    public IReadOnlyDictionary<string, int> CategoryCounts => _categoryCounts ??= Findings
         .GroupBy(f => f.Category, StringComparer.OrdinalIgnoreCase)
         .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
 }
