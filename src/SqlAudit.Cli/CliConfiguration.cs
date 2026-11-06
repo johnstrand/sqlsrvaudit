@@ -148,8 +148,10 @@ internal sealed class CliOptions
                 LargeTableRowThreshold = parseResult.GetValue(parser.LargeRows),
                 UnusedIndexMinUpdates = parseResult.GetValue(parser.UnusedMinUpdates),
                 UnusedIndexMaxReads = parseResult.GetValue(parser.UnusedMaxReads),
+                FragmentationMinPageCount = parseResult.GetValue(parser.FragMinPages),
                 FragmentationReorganizeThresholdPercent = parseResult.GetValue(parser.FragReorg),
                 FragmentationRebuildThresholdPercent = parseResult.GetValue(parser.FragRebuild),
+                LowPageDensityThresholdPercent = parseResult.GetValue(parser.LowPageDensityPct),
                 StaleStatsModificationPercent = parseResult.GetValue(parser.StatsModPct),
                 StaleStatsMinModifications = parseResult.GetValue(parser.StatsMinMods),
                 IdentityUsageWarningPercent = parseResult.GetValue(parser.IdentityWarn),
@@ -462,8 +464,10 @@ internal sealed class CliOptions
             LargeRows = CreateOption<long?>("--large-table-rows", "Large table row threshold"),
             UnusedMinUpdates = CreateOption<long?>("--unused-index-min-updates", "Unused index minimum updates threshold"),
             UnusedMaxReads = CreateOption<long?>("--unused-index-max-reads", "Unused index maximum reads threshold"),
+            FragMinPages = CreateOption<int?>("--frag-min-pages", "Fragmentation minimum page count threshold"),
             FragReorg = CreateOption<double?>("--frag-reorg-pct", "Fragmentation reorganize threshold percent"),
             FragRebuild = CreateOption<double?>("--frag-rebuild-pct", "Fragmentation rebuild threshold percent"),
+            LowPageDensityPct = CreateOption<double?>("--low-page-density-pct", "Low page density threshold percent"),
             StatsModPct = CreateOption<double?>("--stats-mod-pct", "Stale statistics modification percentage"),
             StatsMinMods = CreateOption<long?>("--stats-min-mods", "Stale statistics minimum modifications"),
             IdentityWarn = CreateOption<double?>("--identity-warn-pct", "Identity warning threshold percentage"),
@@ -505,8 +509,10 @@ internal sealed class CliOptions
         parser.Scan.Add(parser.LargeRows);
         parser.Scan.Add(parser.UnusedMinUpdates);
         parser.Scan.Add(parser.UnusedMaxReads);
+        parser.Scan.Add(parser.FragMinPages);
         parser.Scan.Add(parser.FragReorg);
         parser.Scan.Add(parser.FragRebuild);
+        parser.Scan.Add(parser.LowPageDensityPct);
         parser.Scan.Add(parser.StatsModPct);
         parser.Scan.Add(parser.StatsMinMods);
         parser.Scan.Add(parser.IdentityWarn);
@@ -661,9 +667,13 @@ internal sealed class CliOptions
 
         public Option<long?> UnusedMaxReads { get; set; } = null!;
 
+        public Option<int?> FragMinPages { get; set; } = null!;
+
         public Option<double?> FragReorg { get; set; } = null!;
 
         public Option<double?> FragRebuild { get; set; } = null!;
+
+        public Option<double?> LowPageDensityPct { get; set; } = null!;
 
         public Option<double?> StatsModPct { get; set; } = null!;
 
@@ -752,6 +762,8 @@ internal sealed class ProjectConfigFile
 
     public IReadOnlyList<string>? ActiveCheckIds { get; init; }
 
+    public AuditSeverity? FailOn { get; init; }
+
     public AuditOptionsOverrides? AuditOptions { get; init; }
 }
 
@@ -838,7 +850,7 @@ internal static class ProjectConfigurationResolver
             ExcludeSchemas = excludeSchemas,
             ExcludeTables = excludeTables,
             Verbosity = cliOptions.Verbosity,
-            FailOnSeverity = cliOptions.FailOnSeverity,
+            FailOnSeverity = cliOptions.FailOnSeverity ?? config?.FailOn,
             ActiveCheckIds = activeCheckIds,
             AuditOptions = effectiveAuditOptions,
             CommandTimeout = cliOptions.CommandTimeout ?? 30,

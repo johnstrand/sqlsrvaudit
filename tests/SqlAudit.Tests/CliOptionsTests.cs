@@ -20,11 +20,13 @@ public sealed class CliOptionsTests
             "--fail-on", "high",
             "--verbose",
             "--stats-min-mods", "1234",
+            "--frag-min-pages", "500",
+            "--low-page-density-pct", "80",
         };
 
         var result = CliOptions.TryParse(args);
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, result.ErrorMessage);
         Assert.NotNull(result.Options);
         Assert.Equal(AuditProfile.Quick, result.Options!.Profile);
         Assert.Equal(OutputFormat.Json, result.Options.OutputFormat);
@@ -35,6 +37,8 @@ public sealed class CliOptionsTests
         Assert.Equal(AuditSeverity.High, result.Options.FailOnSeverity);
         Assert.Equal(LogVerbosity.Verbose, result.Options.Verbosity);
         Assert.Equal(1234, result.Options.AuditOptionOverrides.StaleStatsMinModifications);
+        Assert.Equal(500, result.Options.AuditOptionOverrides.FragmentationMinPageCount);
+        Assert.Equal(80.0, result.Options.AuditOptionOverrides.LowPageDensityThresholdPercent);
     }
 
     [Fact]
@@ -61,7 +65,7 @@ public sealed class CliOptionsTests
 
         var result = CliOptions.TryParse(args);
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, result.ErrorMessage);
         Assert.NotNull(result.Options);
         Assert.True(result.Options!.NonInteractive);
         Assert.Equal(ConfigPreset.DeepStrict, result.Options.Preset);
@@ -81,7 +85,7 @@ public sealed class CliOptionsTests
 
         var result = CliOptions.TryParse(args);
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, result.ErrorMessage);
         Assert.NotNull(result.Options);
         Assert.Equal("suppressions", result.Options!.Command);
         Assert.Equal("init", result.Options.Subcommand);
@@ -114,7 +118,7 @@ public sealed class CliOptionsTests
 
         var result = CliOptions.TryParse(args);
 
-        Assert.True(result.Success);
+        Assert.True(result.Success, result.ErrorMessage);
         Assert.NotNull(result.Options);
         Assert.Equal("report", result.Options!.Command);
         Assert.Equal("diff", result.Options.Subcommand);

@@ -77,6 +77,43 @@ public sealed class ProjectConfigurationResolverTests
     }
 
     [Fact]
+    public void Resolve_UsesFailOnFromConfigFileWhenCliOptionNotSpecified()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "SqlAuditTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var configPath = Path.Combine(tempDir, "sqlaudit.project.json");
+            var configJson = JsonSerializer.Serialize(new
+            {
+                connectionString = "Server=.;Database=Db;Trusted_Connection=True;",
+                failOn = "High",
+            });
+
+            File.WriteAllText(configPath, configJson);
+
+            var cli = new CliOptions
+            {
+                Command = "scan",
+                ConfigPath = configPath,
+                AuditOptionOverrides = new AuditOptionsOverrides(),
+            };
+
+            var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
+
+            Assert.Equal(AuditSeverity.High, resolved.FailOnSeverity);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void Resolve_UsesOutputDataModelFromCliFlag()
     {
         var cli = new CliOptions
