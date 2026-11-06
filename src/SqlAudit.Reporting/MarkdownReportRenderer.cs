@@ -589,7 +589,20 @@ public static class MarkdownReportRenderer
         sb.AppendLine();
     }
 
-    private static string EscapeInline(string input) => input.Replace("|", "\\|", StringComparison.Ordinal);
+    private static string EscapeInline(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return string.Empty;
+        }
+
+        return input
+            .Replace("\r\n", " ", StringComparison.Ordinal)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Replace('`', '\'')
+            .Replace("|", "\\|", StringComparison.Ordinal);
+    }
 
     private static string FormatExclusionList(IReadOnlyList<string> values)
     {

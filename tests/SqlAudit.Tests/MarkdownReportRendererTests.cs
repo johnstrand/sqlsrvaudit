@@ -251,4 +251,32 @@ public sealed class MarkdownReportRendererTests
 
         Assert.DoesNotContain("### ⚠ Data Collection Warnings", markdown, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Render_SanitizesNewlinesAndBackticksInTableCells()
+    {
+        var report = new AuditReport
+        {
+            ServerName = "server01",
+            DatabaseName = "DbA",
+            Edition = "Developer Edition",
+            ProductVersion = "16.0",
+            CapturedAtUtc = DateTimeOffset.UtcNow,
+            CollectionWarnings =
+            [
+                new CollectionWarning("DMVs", "Multi-line error:\r\nLine 2 details\nLine 3 with `backtick` and | pipe"),
+            ],
+            SleepingTransactions =
+            [
+                new SleepingTransactionInfo(55, "app_user", "DbA", 1, 12.5m, "SELECT *\r\nFROM tbl\nWHERE col = `val`"),
+            ],
+            Findings = [],
+        };
+
+        var markdown = MarkdownReportRenderer.Render(report);
+
+        Assert.Contains("Multi-line error: Line 2 details Line 3 with 'backtick' and \\| pipe", markdown, StringComparison.Ordinal);
+        Assert.Contains("SELECT * FROM tbl WHERE col = 'val'", markdown, StringComparison.Ordinal);
+        Assert.DoesNotContain("`backtick`", markdown, StringComparison.Ordinal);
+    }
 }
