@@ -1569,9 +1569,12 @@ public sealed class SqlServerSnapshotCollector
         const string sql = """
             SELECT
                 d.recovery_model_desc,
-                MAX(CASE WHEN b.type = 'D' THEN b.backup_finish_date END) AS last_full_backup_utc,
-                MAX(CASE WHEN b.type = 'I' THEN b.backup_finish_date END) AS last_diff_backup_utc,
-                MAX(CASE WHEN b.type = 'L' THEN b.backup_finish_date END) AS last_log_backup_utc
+                TODATETIMEOFFSET(MAX(CASE WHEN b.type = 'D' THEN b.backup_finish_date END), DATEPART(TZOFFSET, SYSDATETIMEOFFSET())) AS last_full_backup_utc,
+                TODATETIMEOFFSET(MAX(CASE WHEN b.type = 'I' THEN b.backup_finish_date END), DATEPART(TZOFFSET, SYSDATETIMEOFFSET())) AS last_diff_backup_utc,
+                TODATETIMEOFFSET(MAX(CASE WHEN b.type = 'L' THEN b.backup_finish_date END), DATEPART(TZOFFSET, SYSDATETIMEOFFSET())) AS last_log_backup_utc,
+                CONVERT(decimal(19,2), DATEDIFF(minute, MAX(CASE WHEN b.type = 'D' THEN b.backup_finish_date END), GETDATE()) / 60.0) AS hours_since_last_full,
+                CONVERT(decimal(19,2), DATEDIFF(minute, MAX(CASE WHEN b.type = 'I' THEN b.backup_finish_date END), GETDATE()) / 60.0) AS hours_since_last_diff,
+                CONVERT(decimal(19,2), DATEDIFF(minute, MAX(CASE WHEN b.type = 'L' THEN b.backup_finish_date END), GETDATE()) / 60.0) AS hours_since_last_log
             FROM sys.databases d
             LEFT JOIN msdb.dbo.backupset b ON b.database_name = d.name
             WHERE d.database_id = DB_ID()
@@ -1589,7 +1592,6 @@ public sealed class SqlServerSnapshotCollector
             return null;
         }
 
-        var now = DateTimeOffset.UtcNow;
         var lastFull = SqlRead.NullableDateTimeOffset(reader, "last_full_backup_utc");
         var lastDiff = SqlRead.NullableDateTimeOffset(reader, "last_diff_backup_utc");
         var lastLog = SqlRead.NullableDateTimeOffset(reader, "last_log_backup_utc");
@@ -1599,9 +1601,9 @@ public sealed class SqlServerSnapshotCollector
             lastFull,
             lastDiff,
             lastLog,
-            lastFull is null ? null : Convert.ToDecimal((now - lastFull.Value).TotalHours, CultureInfo.InvariantCulture),
-            lastDiff is null ? null : Convert.ToDecimal((now - lastDiff.Value).TotalHours, CultureInfo.InvariantCulture),
-            lastLog is null ? null : Convert.ToDecimal((now - lastLog.Value).TotalHours, CultureInfo.InvariantCulture));
+            SqlRead.NullableDecimal(reader, "hours_since_last_full"),
+            SqlRead.NullableDecimal(reader, "hours_since_last_diff"),
+            SqlRead.NullableDecimal(reader, "hours_since_last_log"));
     }
 
     private static async Task<IReadOnlyList<ColumnInfo>> ReadColumnsAsync(
@@ -2364,9 +2366,12 @@ public sealed class SqlServerSnapshotCollector
             SELECT TOP 50
                 j.name AS job_name,
                 js.step_name,
-                CONVERT(datetime,
-                    CONVERT(char(8), h.run_date, 112) + ' '
-                    + STUFF(STUFF(RIGHT('000000' + CONVERT(varchar, h.run_time), 6), 5, 0, ':'), 3, 0, ':')
+                TODATETIMEOFFSET(
+                    CONVERT(datetime,
+                        CONVERT(char(8), h.run_date, 112) + ' '
+                        + STUFF(STUFF(RIGHT('000000' + CONVERT(varchar, h.run_time), 6), 5, 0, ':'), 3, 0, ':')
+                    ),
+                    DATEPART(TZOFFSET, SYSDATETIMEOFFSET())
                 ) AS last_run_datetime,
                 ISNULL(NULLIF(h.message, ''), 'No error message recorded') AS error_message,
                 h.run_duration
@@ -2481,20 +2486,24 @@ internal static class SqlRead
 
     public static DateTimeOffset? NullableDateTimeOffset(SqlDataReader reader, string column)
     {
-        var value = reader[column];
-        if (value is DBNull)
+        return ToUtcDateTimeOffset(reader[column]);
+    }
+
+    internal static DateTimeOffset? ToUtcDateTimeOffset(object? value)
+    {
+        if (value is null or DBNull)
         {
             return null;
         }
 
         return value switch
         {
-            DateTimeOffset dto => dto,
+            DateTimeOffset dto => dto.ToUniversalTime(),
             DateTime dt => new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc)),
             _ => DateTimeOffset.TryParse(
                 Convert.ToString(value),
                 CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal,
+                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
                 out var parsed)
                 ? parsed
                 : null,

@@ -204,6 +204,25 @@ public sealed class SqlServerChecksExecutionTests
     }
 
     [Fact]
+    public void ToUtcDateTimeOffset_NormalizesNonZeroOffsetToUtc()
+    {
+        var serverLocalOffset = new DateTimeOffset(2026, 6, 15, 14, 30, 0, TimeSpan.FromHours(2));
+        var normalized = SqlRead.ToUtcDateTimeOffset(serverLocalOffset);
+
+        Assert.NotNull(normalized);
+        Assert.Equal(TimeSpan.Zero, normalized.Value.Offset);
+        Assert.Equal(new DateTimeOffset(2026, 6, 15, 12, 30, 0, TimeSpan.Zero), normalized.Value);
+
+        var parsedOffset = SqlRead.ToUtcDateTimeOffset("2026-06-15T09:30:00-03:00");
+        Assert.NotNull(parsedOffset);
+        Assert.Equal(TimeSpan.Zero, parsedOffset.Value.Offset);
+        Assert.Equal(new DateTimeOffset(2026, 6, 15, 12, 30, 0, TimeSpan.Zero), parsedOffset.Value);
+
+        Assert.Null(SqlRead.ToUtcDateTimeOffset(DBNull.Value));
+        Assert.Null(SqlRead.ToUtcDateTimeOffset(null));
+    }
+
+    [Fact]
     public async Task OverWideIndexKeyCheck_UsesMediumAndHighSeverities()
     {
         var context = CreateContext(
