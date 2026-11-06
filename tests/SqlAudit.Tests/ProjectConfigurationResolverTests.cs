@@ -245,4 +245,94 @@ public sealed class ProjectConfigurationResolverTests
             }
         }
     }
+
+    [Fact]
+    public void Resolve_UsesCommandTimeoutFromConfigFile()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "SqlAuditTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var configPath = Path.Combine(tempDir, "sqlaudit.project.json");
+            var configJson = JsonSerializer.Serialize(new
+            {
+                connectionString = "Server=.;Database=Db;Trusted_Connection=True;",
+                commandTimeout = 75,
+            });
+            File.WriteAllText(configPath, configJson);
+
+            var cli = new CliOptions
+            {
+                Command = "scan",
+                ConfigPath = configPath,
+                AuditOptionOverrides = new AuditOptionsOverrides(),
+            };
+
+            var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
+
+            Assert.Equal(75, resolved.CommandTimeout);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Resolve_CliTimeoutOverridesConfigFileTimeout()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), "SqlAuditTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            var configPath = Path.Combine(tempDir, "sqlaudit.project.json");
+            var configJson = JsonSerializer.Serialize(new
+            {
+                connectionString = "Server=.;Database=Db;Trusted_Connection=True;",
+                commandTimeout = 75,
+            });
+            File.WriteAllText(configPath, configJson);
+
+            var cli = new CliOptions
+            {
+                Command = "scan",
+                ConfigPath = configPath,
+                CommandTimeout = 90,
+                AuditOptionOverrides = new AuditOptionsOverrides(),
+            };
+
+            var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
+
+            Assert.Equal(90, resolved.CommandTimeout);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-10)]
+    public void Resolve_ThrowsWhenCommandTimeoutIsZeroOrNegative(int timeout)
+    {
+        var cli = new CliOptions
+        {
+            Command = "scan",
+            ConnectionString = "Server=.;Database=Db;Trusted_Connection=True;",
+            CommandTimeout = timeout,
+            AuditOptionOverrides = new AuditOptionsOverrides(),
+        };
+
+        var exception = Assert.Throws<InvalidOperationException>(() => ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null));
+        Assert.Contains("Command timeout must be greater than zero", exception.Message, StringComparison.Ordinal);
+    }
 }

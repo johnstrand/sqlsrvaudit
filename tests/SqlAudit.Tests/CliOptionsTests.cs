@@ -126,4 +126,20 @@ public sealed class CliOptionsTests
         Assert.Equal("new.json", result.Options.CurrentReportPath);
         Assert.Equal(LogVerbosity.Quiet, result.Options.Verbosity);
     }
+
+    [Fact]
+    public void TryParse_ParsesTimeoutOption()
+    {
+        var args = new[]
+        {
+            "scan",
+            "--timeout", "45",
+        };
+
+        var result = CliOptions.TryParse(args);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.NotNull(result.Options);
+        Assert.Equal(45, result.Options!.CommandTimeout);
+    }
 }

@@ -12,7 +12,8 @@ public sealed class SqlServerSnapshotCollector
         IReadOnlyCollection<string>? excludedSchemas,
         IReadOnlyCollection<string>? excludedTables,
         CancellationToken cancellationToken,
-        IProgress<CollectionProgress>? progress = null)
+        IProgress<CollectionProgress>? progress = null,
+        int commandTimeoutSeconds = 30)
     {
         var totalSteps = profile == AuditProfile.Deep ? 33 : 29;
         var completed = 0;
@@ -26,9 +27,9 @@ public sealed class SqlServerSnapshotCollector
         var warnings = new List<CollectionWarning>();
 
         Report("Server information");
-        var serverInfo = await ReadServerInfoAsync(connection, cancellationToken).ConfigureAwait(false);
+        var serverInfo = await ReadServerInfoAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
 
-        var hasStatePermission = await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false);
+        var hasStatePermission = await HasStateReadPermissionAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
         if (!hasStatePermission)
         {
             warnings.Add(new CollectionWarning(
@@ -38,9 +39,9 @@ public sealed class SqlServerSnapshotCollector
                 "deadlock summary, missing index signals, log health, and tempdb pressure data were not collected."));
         }
 
-        var schemaMetadata = await CollectSchemaMetadataAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
-        var performanceMetrics = await CollectPerformanceMetricsAsync(connection, profile, hasStatePermission, warnings, Report, cancellationToken).ConfigureAwait(false);
-        var operationalHealth = await CollectOperationalHealthAsync(connection, warnings, Report, cancellationToken).ConfigureAwait(false);
+        var schemaMetadata = await CollectSchemaMetadataAsync(connection, profile, warnings, Report, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
+        var performanceMetrics = await CollectPerformanceMetricsAsync(connection, profile, hasStatePermission, warnings, Report, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
+        var operationalHealth = await CollectOperationalHealthAsync(connection, warnings, Report, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
 
         var snapshot = new DatabaseSnapshot
         {
@@ -100,48 +101,49 @@ public sealed class SqlServerSnapshotCollector
         AuditProfile profile,
         List<CollectionWarning> warnings,
         Action<string> report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         var includeStatistics = profile == AuditProfile.Deep;
 
         report("Tables");
-        var tables = await ReadTablesAsync(connection, cancellationToken).ConfigureAwait(false);
+        var tables = await ReadTablesAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
 
         report("Indexes");
-        var indexes = await ReadIndexesAsync(connection, cancellationToken).ConfigureAwait(false);
+        var indexes = await ReadIndexesAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
 
         report("Table statistics");
         var statistics = includeStatistics
             ? await TryReadOptionalListAsync(
-                () => ReadStatisticsAsync(connection, cancellationToken),
+                () => ReadStatisticsAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Table Statistics").ConfigureAwait(false)
             : (IReadOnlyList<StatisticsInfo>)[];
 
         report("Column metadata");
         var columns = await TryReadOptionalListAsync(
-            () => ReadColumnsAsync(connection, cancellationToken),
+            () => ReadColumnsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Column Metadata").ConfigureAwait(false);
 
         report("Column null statistics");
         var columnNullStats = profile == AuditProfile.Deep
             ? await TryReadOptionalListAsync(
-                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken),
+                () => ReadColumnNullStatsAsync(connection, columns, tables, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Column Null Statistics").ConfigureAwait(false)
             : (IReadOnlyList<ColumnNullStats>)[];
 
         report("Foreign keys");
-        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken).ConfigureAwait(false);
+        var foreignKeys = await ReadForeignKeysAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
 
         report("Identity columns");
-        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken).ConfigureAwait(false);
+        var identityColumns = await ReadIdentityColumnsAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
 
         report("Table compression");
         var tableCompression = profile == AuditProfile.Deep
             ? await TryReadOptionalListAsync(
-                () => ReadTableCompressionAsync(connection, cancellationToken),
+                () => ReadTableCompressionAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Table Compression").ConfigureAwait(false)
             : (IReadOnlyList<TableCompressionInfo>)[];
@@ -163,14 +165,15 @@ public sealed class SqlServerSnapshotCollector
         bool hasStatePermission,
         List<CollectionWarning> warnings,
         Action<string> report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         var includePhysical = profile == AuditProfile.Deep;
 
         report("Resource-intensive queries");
         var topResourceIntensiveQueries = hasStatePermission
             ? await TryReadOptionalListAsync(
-                () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
+                () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Resource-Intensive Queries").ConfigureAwait(false)
             : [];
@@ -178,7 +181,7 @@ public sealed class SqlServerSnapshotCollector
         report("Wait statistics");
         var topWaitStats = hasStatePermission
             ? await TryReadOptionalListAsync(
-                () => ReadTopWaitStatsAsync(connection, cancellationToken),
+                () => ReadTopWaitStatsAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Wait Statistics").ConfigureAwait(false)
             : [];
@@ -186,7 +189,7 @@ public sealed class SqlServerSnapshotCollector
         report("Query Store regressions");
         var queryStoreRegressions = hasStatePermission
             ? await TryReadOptionalListAsync(
-                () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
+                () => ReadQueryStoreRegressionsAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Query Store Regressions").ConfigureAwait(false)
             : [];
@@ -194,7 +197,7 @@ public sealed class SqlServerSnapshotCollector
         report("Active blocking sessions");
         var activeBlockingSessions = hasStatePermission
             ? await TryReadOptionalListAsync(
-                () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
+                () => ReadActiveBlockingSessionsAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Active Blocking Sessions").ConfigureAwait(false)
             : [];
@@ -202,7 +205,7 @@ public sealed class SqlServerSnapshotCollector
         report("Deadlock summary");
         var deadlockSummary = hasStatePermission
             ? await TryReadOptionalAsync(
-                () => ReadDeadlockSummaryAsync(connection, cancellationToken),
+                () => ReadDeadlockSummaryAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Deadlock Summary").ConfigureAwait(false)
             : null;
@@ -210,46 +213,46 @@ public sealed class SqlServerSnapshotCollector
         report("Missing index signals");
         var missingIndexSignals = hasStatePermission
             ? await TryReadOptionalListAsync(
-                () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
+                () => ReadMissingIndexSignalsAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Missing Index Signals").ConfigureAwait(false)
             : [];
 
         report("Index usage statistics");
         var indexUsage = await TryReadOptionalListAsync(
-            () => ReadIndexUsageAsync(connection, cancellationToken),
+            () => ReadIndexUsageAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Index Usage Statistics").ConfigureAwait(false);
 
         report("Index physical stats");
         var indexPhysicalStats = includePhysical
             ? await TryReadOptionalListAsync(
-                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken),
+                () => ReadIndexPhysicalStatsAsync(connection, cancellationToken, commandTimeoutSeconds),
                 warnings,
                 "Index Physical Statistics").ConfigureAwait(false)
             : (IReadOnlyList<IndexPhysicalInfo>)[];
 
         report("Sleeping transactions");
         var sleepingTransactions = await TryReadOptionalListAsync(
-            () => ReadSleepingTransactionsAsync(connection, cancellationToken),
+            () => ReadSleepingTransactionsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Sleeping Transactions").ConfigureAwait(false);
 
         report("Memory pressure");
         var memoryPressure = await TryReadOptionalAsync(
-            () => ReadMemoryPressureAsync(connection, cancellationToken),
+            () => ReadMemoryPressureAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Memory Pressure").ConfigureAwait(false);
 
         report("File I/O latency");
         var fileIoLatency = await TryReadOptionalListAsync(
-            () => ReadFileIoLatencyAsync(connection, cancellationToken),
+            () => ReadFileIoLatencyAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "File I/O Latency").ConfigureAwait(false);
 
         report("Plan cache");
         var planCache = await TryReadOptionalAsync(
-            () => ReadPlanCacheAsync(connection, cancellationToken),
+            () => ReadPlanCacheAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Plan Cache").ConfigureAwait(false);
 
@@ -272,77 +275,78 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         List<CollectionWarning> warnings,
         Action<string> report,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         report("Log health");
         var logHealth = await TryReadOptionalAsync(
-            () => ReadLogHealthAsync(connection, cancellationToken),
+            () => ReadLogHealthAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Log Health").ConfigureAwait(false);
 
         report("TempDB pressure");
         var tempDbPressure = await TryReadOptionalAsync(
-            () => ReadTempDbPressureAsync(connection, cancellationToken),
+            () => ReadTempDbPressureAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "TempDB Pressure").ConfigureAwait(false);
 
         report("File growth settings");
         var fileGrowthHealth = await TryReadOptionalListAsync(
-            () => ReadFileGrowthHealthAsync(connection, cancellationToken),
+            () => ReadFileGrowthHealthAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "File Growth Settings").ConfigureAwait(false);
 
         report("Backup posture");
         var backupPosture = await TryReadOptionalAsync(
-            () => ReadBackupPostureAsync(connection, cancellationToken),
+            () => ReadBackupPostureAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Backup Posture").ConfigureAwait(false);
 
         report("Security hygiene");
         var securityHygieneIssues = await TryReadOptionalListAsync(
-            () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken),
+            () => ReadSecurityHygieneIssuesAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Security Hygiene").ConfigureAwait(false);
 
         report("Server configurations");
         var serverConfigurations = await TryReadOptionalListAsync(
-            () => ReadServerConfigurationsAsync(connection, cancellationToken),
+            () => ReadServerConfigurationsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Server Configurations").ConfigureAwait(false);
 
         report("Integrity check history");
         var lastDbccCheckDb = await TryReadOptionalStructAsync(
-            () => ReadLastDbccCheckDbAsync(connection, cancellationToken),
+            () => ReadLastDbccCheckDbAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Integrity Check History").ConfigureAwait(false);
 
         report("TempDB configuration");
         var tempDbConfig = await TryReadOptionalAsync(
-            () => ReadTempDbConfigAsync(connection, cancellationToken),
+            () => ReadTempDbConfigAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "TempDB Configuration").ConfigureAwait(false);
 
         report("Database options");
         var databaseOptions = await TryReadOptionalAsync(
-            () => ReadDatabaseOptionsAsync(connection, cancellationToken),
+            () => ReadDatabaseOptionsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Database Options").ConfigureAwait(false);
 
         report("Volume stats");
         var volumeStats = await TryReadOptionalListAsync(
-            () => ReadVolumeStatsAsync(connection, cancellationToken),
+            () => ReadVolumeStatsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Volume Stats").ConfigureAwait(false);
 
         report("SQL Agent job failures");
         var failedAgentJobs = await TryReadOptionalListAsync(
-            () => ReadFailedAgentJobsAsync(connection, cancellationToken),
+            () => ReadFailedAgentJobsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "SQL Agent Jobs").ConfigureAwait(false);
 
         report("Global trace flags");
         var globalTraceFlags = await TryReadOptionalListAsync(
-            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken),
+            () => ReadGlobalTraceFlagsAsync(connection, cancellationToken, commandTimeoutSeconds),
             warnings,
             "Global Trace Flags").ConfigureAwait(false);
 
@@ -472,7 +476,7 @@ public sealed class SqlServerSnapshotCollector
                        || excludedTableSet.Contains($"{schemaName}.{tableName}")));
     }
 
-    private static async Task<ServerInfo> ReadServerInfoAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<ServerInfo> ReadServerInfoAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -488,7 +492,7 @@ public sealed class SqlServerSnapshotCollector
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
 
@@ -508,7 +512,7 @@ public sealed class SqlServerSnapshotCollector
             SqlRead.Bool(reader, "is_azure"));
     }
 
-    private static async Task<IReadOnlyList<TableInfo>> ReadTablesAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<TableInfo>> ReadTablesAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             WITH table_pages AS
@@ -555,10 +559,11 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Decimal(reader, "reserved_mb"),
                 SqlRead.Bool(reader, "has_primary_key"),
                 SqlRead.Bool(reader, "is_heap")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<IReadOnlyList<IndexInfo>> ReadIndexesAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<IndexInfo>> ReadIndexesAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -658,10 +663,11 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.NullableString(reader, "filter_definition"),
                 SqlRead.Int(reader, "key_size_bytes"),
                 SqlRead.Int(reader, "key_column_count")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<IReadOnlyList<IndexUsageInfo>> ReadIndexUsageAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<IndexUsageInfo>> ReadIndexUsageAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -694,10 +700,11 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Long(reader, "user_lookups"),
                 SqlRead.Long(reader, "user_updates"),
                 SqlRead.NullableDateTimeOffset(reader, "last_read_utc")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<IReadOnlyList<IndexPhysicalInfo>> ReadIndexPhysicalStatsAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<IndexPhysicalInfo>> ReadIndexPhysicalStatsAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -723,7 +730,8 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Long(reader, "page_count"),
                 SqlRead.Double(reader, "fragmentation_percent"),
                 SqlRead.Double(reader, "avg_page_space_used_percent")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private sealed record ForeignKeyColumnRow(
@@ -750,7 +758,7 @@ public sealed class SqlServerSnapshotCollector
         byte ReferencedPrecision,
         byte ReferencedScale);
 
-    private static async Task<IReadOnlyList<ForeignKeyInfo>> ReadForeignKeysAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<ForeignKeyInfo>> ReadForeignKeysAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -835,7 +843,8 @@ public sealed class SqlServerSnapshotCollector
                 Convert.ToInt16(reader["referenced_max_length"]),
                 Convert.ToByte(reader["referenced_precision"]),
                 Convert.ToByte(reader["referenced_scale"])),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
 
         return rows
             .GroupBy(r => r.ObjectId)
@@ -887,7 +896,7 @@ public sealed class SqlServerSnapshotCollector
         return name;
     }
 
-    private static async Task<IReadOnlyList<StatisticsInfo>> ReadStatisticsAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<StatisticsInfo>> ReadStatisticsAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -920,10 +929,11 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.NullableDateTimeOffset(reader, "last_updated"),
                 SqlRead.Long(reader, "rows_count"),
                 SqlRead.Long(reader, "modification_counter")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<IReadOnlyList<IdentityColumnInfo>> ReadIdentityColumnsAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<IReadOnlyList<IdentityColumnInfo>> ReadIdentityColumnsAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -984,12 +994,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.NullableDecimal(reader, "last_value"),
                 SqlRead.Decimal(reader, "max_value"),
                 SqlRead.Decimal(reader, "usage_percent")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<ResourceIntensiveQueryInfo>> ReadTopResourceIntensiveQueriesAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT TOP (10)
@@ -1032,12 +1044,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Long(reader, "total_logical_writes"),
                 SqlRead.NullableDateTimeOffset(reader, "last_execution_utc"),
                 NormalizeQueryText(SqlRead.String(reader, "query_text"))),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<WaitStatInfo>> ReadTopWaitStatsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT TOP (12)
@@ -1099,14 +1113,16 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Decimal(reader, "signal_wait_seconds"),
                 SqlRead.Decimal(reader, "avg_wait_ms"),
                 SqlRead.String(reader, "wait_category")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<QueryStoreRegressionInfo>> ReadQueryStoreRegressionsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
-        if (!await IsQueryStoreEnabledAsync(connection, cancellationToken).ConfigureAwait(false))
+        if (!await IsQueryStoreEnabledAsync(connection, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false))
         {
             return [];
         }
@@ -1175,12 +1191,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Long(reader, "recent_executions"),
                 SqlRead.NullableDateTimeOffset(reader, "last_execution_utc"),
                 NormalizeQueryText(SqlRead.String(reader, "query_sql_text"))),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<BlockingSessionInfo>> ReadActiveBlockingSessionsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT TOP (10)
@@ -1213,12 +1231,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Long(reader, "wait_time_ms"),
                 SqlRead.String(reader, "wait_resource"),
                 NormalizeQueryText(SqlRead.String(reader, "query_text"))),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<DeadlockSummaryInfo?> ReadDeadlockSummaryAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             WITH deadlocks AS
@@ -1244,7 +1264,7 @@ public sealed class SqlServerSnapshotCollector
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
 
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
@@ -1260,7 +1280,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<MissingIndexSignalInfo>> ReadMissingIndexSignalsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT TOP (15)
@@ -1319,12 +1340,14 @@ public sealed class SqlServerSnapshotCollector
                     existingIndexCount,
                     guardrailNote);
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<LogHealthInfo?> ReadLogHealthAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -1353,7 +1376,7 @@ public sealed class SqlServerSnapshotCollector
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
 
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
@@ -1373,7 +1396,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<TempDbPressureInfo?> ReadTempDbPressureAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -1386,7 +1410,7 @@ public sealed class SqlServerSnapshotCollector
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
 
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
@@ -1404,7 +1428,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<FileGrowthHealthInfo>> ReadFileGrowthHealthAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -1457,12 +1482,14 @@ public sealed class SqlServerSnapshotCollector
                     growthDescription,
                     advisory);
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<BackupPostureInfo?> ReadBackupPostureAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -1478,7 +1505,7 @@ public sealed class SqlServerSnapshotCollector
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
 
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
@@ -1504,7 +1531,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<ColumnInfo>> ReadColumnsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -1538,14 +1566,16 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Int(reader, "scale"),
                 SqlRead.Bool(reader, "is_nullable"),
                 SqlRead.Int(reader, "column_id")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<ColumnNullStats>> ReadColumnNullStatsAsync(
         SqlConnection connection,
         IReadOnlyList<ColumnInfo> columns,
         IReadOnlyList<TableInfo> tables,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const int maxColumnsPerTable = 30;
         const long maxRowsForSampling = 5_000_000;
@@ -1574,7 +1604,7 @@ public sealed class SqlServerSnapshotCollector
             var sb = new System.Text.StringBuilder();
             var firstPart = true;
 
-            await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
+            await using var command = new SqlCommand { Connection = connection, CommandTimeout = commandTimeoutSeconds };
             var paramIndex = 0;
 
             foreach (var group in chunk)
@@ -1673,7 +1703,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<SecurityHygieneIssueInfo>> ReadSecurityHygieneIssuesAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT TOP (50)
@@ -1738,10 +1769,11 @@ public sealed class SqlServerSnapshotCollector
                 ParseSeverity(SqlRead.String(reader, "severity")),
                 SqlRead.String(reader, "principal_name"),
                 SqlRead.String(reader, "details")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<bool> IsQueryStoreEnabledAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<bool> IsQueryStoreEnabledAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT CASE
@@ -1755,10 +1787,10 @@ public sealed class SqlServerSnapshotCollector
                    END
         """;
 
-        return await ExecuteBoolScalarAsync(connection, sql, cancellationToken).ConfigureAwait(false);
+        return await ExecuteBoolScalarAsync(connection, sql, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<bool> HasStateReadPermissionAsync(SqlConnection connection, CancellationToken cancellationToken)
+    private static async Task<bool> HasStateReadPermissionAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT CASE
@@ -1769,14 +1801,14 @@ public sealed class SqlServerSnapshotCollector
                    END
         """;
 
-        return await ExecuteBoolScalarAsync(connection, sql, cancellationToken).ConfigureAwait(false);
+        return await ExecuteBoolScalarAsync(connection, sql, cancellationToken, commandTimeoutSeconds).ConfigureAwait(false);
     }
 
-    private static async Task<bool> ExecuteBoolScalarAsync(SqlConnection connection, string sql, CancellationToken cancellationToken)
+    private static async Task<bool> ExecuteBoolScalarAsync(SqlConnection connection, string sql, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
 
         var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
@@ -1871,13 +1903,14 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         string sql,
         Func<SqlDataReader, T> map,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         var rows = new List<T>();
 
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 120,
+            CommandTimeout = commandTimeoutSeconds,
         };
 
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
@@ -1901,7 +1934,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<ServerConfigInfo>> ReadServerConfigurationsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT name, value_in_use, description
@@ -1915,19 +1949,21 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.String(r, "name"),
                 SqlRead.Decimal(r, "value_in_use"),
                 SqlRead.String(r, "description")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<DateTimeOffset?> ReadLastDbccCheckDbAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             DBCC DBINFO() WITH TABLERESULTS, NO_INFOMSGS
             """;
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 60,
+            CommandTimeout = commandTimeoutSeconds,
         };
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -1951,7 +1987,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<TempDbConfigInfo?> ReadTempDbConfigAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string filesSql = """
             SELECT size * 8.0 / 1024 AS size_mb
@@ -1962,7 +1999,8 @@ public sealed class SqlServerSnapshotCollector
             connection,
             filesSql,
             r => SqlRead.Decimal(r, "size_mb"),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
 
         int logicalCpuCount;
         try
@@ -1970,7 +2008,7 @@ public sealed class SqlServerSnapshotCollector
             const string cpuSql = "SELECT cpu_count FROM sys.dm_os_sys_info";
             await using var cmd = new SqlCommand(cpuSql, connection)
             {
-                CommandTimeout = 30,
+                CommandTimeout = commandTimeoutSeconds,
             };
             var result = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             logicalCpuCount = result is DBNull || result is null ? 0 : Convert.ToInt32(result, System.Globalization.CultureInfo.InvariantCulture);
@@ -1985,7 +2023,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<SleepingTransactionInfo>> ReadSleepingTransactionsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -2014,12 +2053,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Int(r, "open_transaction_count"),
                 SqlRead.Decimal(r, "elapsed_minutes"),
                 SqlRead.String(r, "last_query_text")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<MemoryPressureInfo?> ReadMemoryPressureAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT object_name, counter_name, cntr_value
@@ -2032,7 +2073,7 @@ public sealed class SqlServerSnapshotCollector
         var counters = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -2065,7 +2106,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<FileIoLatencyInfo>> ReadFileIoLatencyAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -2098,12 +2140,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Decimal(r, "avg_read_latency_ms"),
                 SqlRead.Decimal(r, "avg_write_latency_ms"),
                 SqlRead.Decimal(r, "size_mb")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<PlanCacheInfo?> ReadPlanCacheAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -2118,7 +2162,7 @@ public sealed class SqlServerSnapshotCollector
             """;
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 60,
+            CommandTimeout = commandTimeoutSeconds,
         };
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -2136,7 +2180,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<TableCompressionInfo>> ReadTableCompressionAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -2166,12 +2211,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.String(r, "data_compression_desc"),
                 SqlRead.Long(r, "rows"),
                 SqlRead.Long(r, "used_page_count")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<DatabaseOptionsInfo?> ReadDatabaseOptionsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -2186,7 +2233,7 @@ public sealed class SqlServerSnapshotCollector
             """;
         await using var command = new SqlCommand(sql, connection)
         {
-            CommandTimeout = 30,
+            CommandTimeout = commandTimeoutSeconds,
         };
         await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleRow, cancellationToken).ConfigureAwait(false);
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -2205,7 +2252,8 @@ public sealed class SqlServerSnapshotCollector
 
     private static async Task<IReadOnlyList<VolumeInfo>> ReadVolumeStatsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT
@@ -2228,12 +2276,14 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Decimal(r, "available_pct"),
                 SqlRead.String(r, "logical_name"),
                 SqlRead.String(r, "file_type")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<FailedAgentJobInfo>> ReadFailedAgentJobsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = """
             SELECT TOP 50
@@ -2270,12 +2320,14 @@ public sealed class SqlServerSnapshotCollector
                     SqlRead.String(r, "error_message"),
                     (hours * 3600) + (minutes * 60) + seconds);
             },
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 
     private static async Task<IReadOnlyList<GlobalTraceFlagInfo>> ReadGlobalTraceFlagsAsync(
         SqlConnection connection,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int commandTimeoutSeconds)
     {
         const string sql = "DBCC TRACESTATUS(-1) WITH NO_INFOMSGS";
         return await ReadListAsync(
@@ -2284,7 +2336,8 @@ public sealed class SqlServerSnapshotCollector
             r => new GlobalTraceFlagInfo(
                 SqlRead.Int(r, "TraceFlag"),
                 SqlRead.Bool(r, "Global")),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            commandTimeoutSeconds).ConfigureAwait(false);
     }
 }
 

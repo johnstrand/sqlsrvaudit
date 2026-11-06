@@ -16,7 +16,8 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         AuditProfile profile = AuditProfile.Deep,
         IReadOnlyCollection<string>? excludedSchemas = null,
         IReadOnlyCollection<string>? excludedTables = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int commandTimeoutSeconds = 30)
     {
         var run = await RunWithSnapshotAsync(
                 connectionString,
@@ -26,7 +27,8 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
                 excludedTables,
                 collectionProgress: null,
                 checkProgress: null,
-                cancellationToken)
+                cancellationToken,
+                commandTimeoutSeconds)
             .ConfigureAwait(false);
 
         return run.Report;
@@ -40,10 +42,11 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         IReadOnlyCollection<string>? excludedTables = null,
         IProgress<CollectionProgress>? collectionProgress = null,
         IProgress<string>? checkProgress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        int commandTimeoutSeconds = 30)
     {
         var snapshot = await SqlServerSnapshotCollector
-            .CollectAsync(connectionString, profile, excludedSchemas, excludedTables, cancellationToken, collectionProgress)
+            .CollectAsync(connectionString, profile, excludedSchemas, excludedTables, cancellationToken, collectionProgress, commandTimeoutSeconds)
             .ConfigureAwait(false);
         var runner = new HealthCheckRunner(customChecks ?? SqlServerHealthChecks.Create(profile));
 

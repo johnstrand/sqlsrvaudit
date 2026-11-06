@@ -765,6 +765,8 @@ internal sealed class ProjectConfigFile
     public AuditSeverity? FailOn { get; init; }
 
     public AuditOptionsOverrides? AuditOptions { get; init; }
+
+    public int? CommandTimeout { get; init; }
 }
 
 internal sealed class EffectiveRunOptions
@@ -834,6 +836,11 @@ internal static class ProjectConfigurationResolver
         var outputDir = Path.GetFullPath(cliOptions.OutputDirectory ?? config?.OutputDirectory ?? "audit-output");
         var outputDataModel = cliOptions.OutputDataModel || config?.OutputDataModel == true;
         var suppressionsPath = ResolveSuppressionsPath(cliOptions.SuppressionsPath, config?.SuppressionsPath);
+        var commandTimeout = cliOptions.CommandTimeout ?? config?.CommandTimeout ?? 30;
+        if (commandTimeout <= 0)
+        {
+            throw new InvalidOperationException("Command timeout must be greater than zero seconds.");
+        }
 
         return new EffectiveRunOptions
         {
@@ -853,7 +860,7 @@ internal static class ProjectConfigurationResolver
             FailOnSeverity = cliOptions.FailOnSeverity ?? config?.FailOn,
             ActiveCheckIds = activeCheckIds,
             AuditOptions = effectiveAuditOptions,
-            CommandTimeout = cliOptions.CommandTimeout ?? 30,
+            CommandTimeout = commandTimeout,
         };
     }
 

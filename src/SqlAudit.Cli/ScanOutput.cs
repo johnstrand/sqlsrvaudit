@@ -104,7 +104,8 @@ internal static class ScanOutput
                 resolved.ExcludeTables,
                 collectionProgress: null,
                 checkProgress: null,
-                cancellationToken)
+                cancellationToken,
+                resolved.CommandTimeout)
             .ConfigureAwait(false);
     }
 
@@ -159,7 +160,8 @@ internal static class ScanOutput
                         resolved.ExcludeTables,
                         collectionProgress,
                         checkProgress,
-                        cancellationToken)
+                        cancellationToken,
+                        resolved.CommandTimeout)
                     .ConfigureAwait(false);
 
                 collectTask.Description = "[green]Database snapshot collected[/]";

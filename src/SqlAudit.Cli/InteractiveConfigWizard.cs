@@ -127,6 +127,7 @@ internal static class InteractiveConfigWizard
                 ? null
                 : checks.Where(c => active.Contains(c.Id)).Select(c => c.Id).ToArray(),
             AuditOptions = storeOverrides,
+            CommandTimeout = existing?.CommandTimeout,
         };
 
         ProjectConfigurationResolver.SaveConfig(targetPath, config);
