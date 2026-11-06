@@ -2,11 +2,203 @@ using Spectre.Console;
 using SqlAudit.Core.Models;
 using SqlAudit.SqlServer;
 using System.Diagnostics;
+using System.IO;
 
 namespace SqlAudit.Cli;
 
 internal static class ScanOutput
 {
+    private static TextWriter? _lastErrorWriter;
+    private static IAnsiConsole? _errorConsole;
+
+    internal static IAnsiConsole ErrorConsole
+    {
+        get
+        {
+            var current = Console.Error;
+            if (_errorConsole is null || !ReferenceEquals(current, _lastErrorWriter))
+            {
+                _lastErrorWriter = current;
+                _errorConsole = AnsiConsole.Create(new AnsiConsoleSettings
+                {
+                    Out = new AnsiConsoleOutput(current),
+                });
+            }
+
+            return _errorConsole;
+        }
+        set
+        {
+            _errorConsole = value;
+            _lastErrorWriter = Console.Error;
+        }
+    }
+
+    internal static void ResetErrorConsole()
+    {
+        _errorConsole = null;
+        _lastErrorWriter = null;
+    }
+
+    public static void ShowError(string message, string? details = null, string? hint = null)
+    {
+        ErrorConsole.MarkupLine($"[red bold]Error:[/] {Markup.Escape(message)}");
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            ErrorConsole.MarkupLine($"[grey]{Markup.Escape(hint)}[/]");
+        }
+
+        if (!string.IsNullOrWhiteSpace(details))
+        {
+            var formattedDetails = details.StartsWith("Details:", StringComparison.OrdinalIgnoreCase)
+                ? details
+                : $"Details: {details}";
+            ErrorConsole.MarkupLine($"[grey]{Markup.Escape(formattedDetails)}[/]");
+        }
+    }
+
+    public static void ShowWarning(string message, string? details = null)
+    {
+        var formatted = message.StartsWith("Warning:", StringComparison.OrdinalIgnoreCase)
+            ? $"[yellow]{Markup.Escape(message)}[/]"
+            : $"[yellow]Warning:[/] {Markup.Escape(message)}";
+
+        ErrorConsole.MarkupLine(formatted);
+
+        if (!string.IsNullOrWhiteSpace(details))
+        {
+            var formattedDetails = details.StartsWith("Details:", StringComparison.OrdinalIgnoreCase)
+                ? details
+                : $"Details: {details}";
+            ErrorConsole.MarkupLine($"[grey]{Markup.Escape(formattedDetails)}[/]");
+        }
+    }
+
+    public static void ShowInfo(string message)
+    {
+        AnsiConsole.MarkupLine($"[grey]{Markup.Escape(message)}[/]");
+    }
+
+    public static void ShowSuccess(string message)
+    {
+        AnsiConsole.MarkupLine($"[green]✓[/] {Markup.Escape(message)}");
+    }
+
+    public static void PrintDeletingFixScript(LogVerbosity verbosity, string file)
+    {
+        if (verbosity >= LogVerbosity.Normal)
+        {
+            AnsiConsole.MarkupLine($"[grey]Deleting existing fix script:[/] [green]{Markup.Escape(file)}[/]");
+        }
+    }
+
+    public static void PrintSuppressionsValidationResult(string fullPath, SuppressionValidationResult result)
+    {
+        AnsiConsole.MarkupLine($"[grey]Suppressions file:[/] [cyan]{Markup.Escape(fullPath)}[/]");
+        AnsiConsole.MarkupLine($"[grey]Rules parsed     :[/] [white]{result.RuleCount}[/]");
+
+        foreach (var warning in result.Warnings)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Warning:[/] {Markup.Escape(warning)}");
+        }
+
+        if (result.IsValid)
+        {
+            AnsiConsole.MarkupLine("[green]Validation passed.[/]");
+            return;
+        }
+
+        ErrorConsole.MarkupLine("[red]Validation failed.[/]");
+        foreach (var error in result.Errors)
+        {
+            ErrorConsole.MarkupLine($"[red]Error:[/] {Markup.Escape(error)}");
+        }
+    }
+
+    public static void PrintReportDiff(
+        ReportDiffResult diff,
+        string previousPath,
+        string currentPath,
+        LogVerbosity verbosity)
+    {
+        if (verbosity == LogVerbosity.Quiet)
+        {
+            return;
+        }
+
+        AnsiConsole.Write(new Rule("[cyan bold]Report diff[/]").LeftJustified());
+        AnsiConsole.MarkupLine($"  [grey]Previous :[/] [cyan]{Markup.Escape(previousPath)}[/]");
+        AnsiConsole.MarkupLine($"  [grey]Current  :[/] [cyan]{Markup.Escape(currentPath)}[/]");
+        AnsiConsole.WriteLine();
+
+        var summaryTable = new Table()
+            .Border(TableBorder.Rounded)
+            .BorderColor(Color.Grey)
+            .AddColumn(new TableColumn("[grey]Metric[/]"))
+            .AddColumn(new TableColumn("[grey]Count[/]").RightAligned());
+
+        summaryTable.AddRow("[grey]New findings[/]", diff.NewFindings.Count > 0 ? $"[yellow]{diff.NewFindings.Count}[/]" : "[grey]0[/]");
+        summaryTable.AddRow("[grey]Fixed findings[/]", diff.FixedFindings.Count > 0 ? $"[green]{diff.FixedFindings.Count}[/]" : "[grey]0[/]");
+        summaryTable.AddRow("[grey]Regressed severity[/]", diff.Regressed.Count > 0 ? $"[red]{diff.Regressed.Count}[/]" : "[grey]0[/]");
+        summaryTable.AddRow("[grey]Improved severity[/]", diff.Improved.Count > 0 ? $"[green]{diff.Improved.Count}[/]" : "[grey]0[/]");
+
+        AnsiConsole.Write(summaryTable);
+
+        var isVerbose = verbosity == LogVerbosity.Verbose;
+        var limit = isVerbose ? int.MaxValue : 10;
+
+        PrintDiffFindingList(
+            isVerbose ? "New findings" : "Top new findings",
+            [.. diff.NewFindings.OrderBy(f => f.Severity).Take(limit)]);
+
+        PrintDiffFindingList(
+            isVerbose ? "Fixed findings" : "Top fixed findings",
+            [.. diff.FixedFindings.OrderBy(f => f.Severity).Take(limit)]);
+
+        if (diff.Regressed.Count > 0)
+        {
+            var regressedList = diff.Regressed.Take(limit).ToList();
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine($"[red bold]{(isVerbose ? "Regressed severity:" : "Top regressed severity:")}[/]");
+            foreach (var (prev, curr) in regressedList)
+            {
+                var prevColor = SeverityMarkup.GetValueOrDefault(prev.Severity, "grey");
+                var currColor = SeverityMarkup.GetValueOrDefault(curr.Severity, "grey");
+                AnsiConsole.MarkupLine($"  [grey]-[/] [cyan]{Markup.Escape(curr.Id)}[/] [white]{Markup.Escape(curr.DatabaseObject)}[/] ([{prevColor}]{prev.Severity}[/] -> [{currColor}]{curr.Severity}[/])");
+            }
+        }
+
+        if (isVerbose && diff.Improved.Count > 0)
+        {
+            AnsiConsole.WriteLine();
+            AnsiConsole.MarkupLine("[green bold]Improved severity:[/]");
+            foreach (var (prev, curr) in diff.Improved)
+            {
+                var prevColor = SeverityMarkup.GetValueOrDefault(prev.Severity, "grey");
+                var currColor = SeverityMarkup.GetValueOrDefault(curr.Severity, "grey");
+                AnsiConsole.MarkupLine($"  [grey]-[/] [cyan]{Markup.Escape(curr.Id)}[/] [white]{Markup.Escape(curr.DatabaseObject)}[/] ([{prevColor}]{prev.Severity}[/] -> [{currColor}]{curr.Severity}[/])");
+            }
+        }
+
+        AnsiConsole.Write(new Rule().RuleStyle("grey"));
+    }
+
+    private static void PrintDiffFindingList(string title, IReadOnlyList<AuditFinding> findings)
+    {
+        AnsiConsole.WriteLine();
+        AnsiConsole.MarkupLine($"[cyan bold]{Markup.Escape(title)}:[/]");
+        if (findings.Count == 0)
+        {
+            AnsiConsole.MarkupLine("  [grey](none)[/]");
+            return;
+        }
+
+        foreach (var finding in findings)
+        {
+            var color = SeverityMarkup.GetValueOrDefault(finding.Severity, "white");
+            AnsiConsole.MarkupLine($"  [grey]-[/] [cyan]{Markup.Escape(finding.Id)}[/] [white]{Markup.Escape(finding.DatabaseObject)}[/] [{color}][[{finding.Severity}]][/]");
+        }
+    }
     private static readonly Dictionary<AuditSeverity, string> SeverityMarkup = new()
     {
         [AuditSeverity.Critical] = "red",

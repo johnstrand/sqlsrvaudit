@@ -9,6 +9,7 @@ using SqlAudit.Core.Models;
 
 namespace SqlAudit.Tests;
 
+[Collection("ConsoleTests")]
 public class ProgramTests
 {
     [Fact]

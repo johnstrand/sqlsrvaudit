@@ -14,16 +14,20 @@ namespace SqlAudit.Tests;
 public sealed class ScanOutputTests : IDisposable
 {
     private readonly TestConsole _console;
+    private readonly TestConsole _errorConsole;
 
     public ScanOutputTests()
     {
         _console = new TestConsole();
+        _errorConsole = new TestConsole();
         AnsiConsole.Console = _console;
+        ScanOutput.ErrorConsole = _errorConsole;
     }
 
     public void Dispose()
     {
         AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings()); // Reset
+        ScanOutput.ResetErrorConsole();
     }
 
     [Fact]
@@ -246,5 +250,151 @@ public sealed class ScanOutputTests : IDisposable
         Assert.Contains("Failed Check", _console.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("failed", _console.Output, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("20ms", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void ShowError_WithHintAndDetails_WritesToErrorConsole()
+    {
+        ScanOutput.ShowError("Test error", details: "Some detail", hint: "Try this fix");
+
+        Assert.Contains("Error:", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Test error", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Try this fix", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Details: Some detail", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public void ShowWarning_WritesToErrorConsole()
+    {
+        ScanOutput.ShowWarning("Warning: disk almost full", details: "10% remaining");
+
+        Assert.Contains("Warning: disk almost full", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Details: 10% remaining", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public void ShowSuccess_And_ShowInfo_WritesToConsole()
+    {
+        ScanOutput.ShowSuccess("Operation succeeded");
+        ScanOutput.ShowInfo("Informational message");
+
+        Assert.Contains("Operation succeeded", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Informational message", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(_errorConsole.Output);
+    }
+
+    [Fact]
+    public void PrintDeletingFixScript_Normal_PrintsMessage()
+    {
+        ScanOutput.PrintDeletingFixScript(LogVerbosity.Normal, "test-fix.sql");
+        Assert.Contains("Deleting existing fix script", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("test-fix.sql", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PrintDeletingFixScript_Quiet_DoesNotPrint()
+    {
+        ScanOutput.PrintDeletingFixScript(LogVerbosity.Quiet, "test-fix.sql");
+        Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public void PrintSuppressionsValidationResult_Valid_PrintsSuccess()
+    {
+        var result = new SuppressionValidationResult(IsValid: true, RuleCount: 3, Warnings: ["Warning 1"], Errors: []);
+        ScanOutput.PrintSuppressionsValidationResult("path/to/suppressions.json", result);
+
+        Assert.Contains("Suppressions file", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("path/to/suppressions.json", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("3", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Warning 1", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Validation passed", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(_errorConsole.Output);
+    }
+
+    [Fact]
+    public void PrintSuppressionsValidationResult_Invalid_PrintsErrorsToErrorConsole()
+    {
+        var result = new SuppressionValidationResult(IsValid: false, RuleCount: 0, Warnings: [], Errors: ["Syntax error in JSON"]);
+        ScanOutput.PrintSuppressionsValidationResult("path/to/bad.json", result);
+
+        Assert.Contains("Validation failed", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Syntax error in JSON", _errorConsole.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PrintReportDiff_Quiet_DoesNotPrint()
+    {
+        var diff = new ReportDiffResult([], [], [], []);
+        ScanOutput.PrintReportDiff(diff, "prev.json", "curr.json", LogVerbosity.Quiet);
+
+        Assert.Empty(_console.Output);
+    }
+
+    [Fact]
+    public void PrintReportDiff_Normal_PrintsSummaryAndTopFindings()
+    {
+        var finding = new AuditFinding
+        {
+            Id = "IDX-001",
+            Title = "Missing Index",
+            Category = "Indexes",
+            Severity = AuditSeverity.High,
+            DatabaseObject = "[dbo].[Users]",
+            Description = "desc",
+            Impact = "impact",
+            Recommendation = "rec",
+            ServiceWindow = ServiceWindowAdvisor.No("none"),
+        };
+        var diff = new ReportDiffResult([finding], [], [], []);
+        ScanOutput.PrintReportDiff(diff, "prev.json", "curr.json", LogVerbosity.Normal);
+
+        Assert.Contains("Report diff", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("prev.json", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("curr.json", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("New findings", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("IDX-001", _console.Output, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PrintReportDiff_Verbose_PrintsAllFindingsAndImprovements()
+    {
+        var finding1 = new AuditFinding
+        {
+            Id = "IDX-001",
+            Title = "Missing Index",
+            Category = "Indexes",
+            Severity = AuditSeverity.High,
+            DatabaseObject = "[dbo].[Users]",
+            Description = "desc",
+            Impact = "impact",
+            Recommendation = "rec",
+            ServiceWindow = ServiceWindowAdvisor.No("none"),
+        };
+        var finding2 = new AuditFinding
+        {
+            Id = "IDX-002",
+            Title = "Duplicate Index",
+            Category = "Indexes",
+            Severity = AuditSeverity.Medium,
+            DatabaseObject = "[dbo].[Orders]",
+            Description = "desc",
+            Impact = "impact",
+            Recommendation = "rec",
+            ServiceWindow = ServiceWindowAdvisor.No("none"),
+        };
+        var diff = new ReportDiffResult(
+            [finding1],
+            [],
+            [(finding2, finding1)],
+            [(finding1, finding2)]);
+
+        ScanOutput.PrintReportDiff(diff, "prev.json", "curr.json", LogVerbosity.Verbose);
+
+        Assert.Contains("Report diff", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Regressed severity", _console.Output, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Improved severity", _console.Output, StringComparison.OrdinalIgnoreCase);
     }
 }

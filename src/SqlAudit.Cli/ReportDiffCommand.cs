@@ -6,19 +6,19 @@ namespace SqlAudit.Cli;
 
 internal static class ReportDiffCommand
 {
-    public static int Run(CliOptions options)
+    public static int Run(CliOptions options) => Run(options, options.Verbosity);
+
+    public static int Run(CliOptions options, LogVerbosity verbosity)
     {
         if (!string.Equals(options.Subcommand, "diff", StringComparison.OrdinalIgnoreCase))
         {
-            Console.Error.WriteLine($"Unknown report subcommand: {options.Subcommand}");
-            Console.Error.WriteLine("Use 'report diff'.");
+            ScanOutput.ShowError($"Unknown report subcommand: {options.Subcommand}", hint: "Use 'report diff'.");
             return 2;
         }
 
         if (string.IsNullOrWhiteSpace(options.PreviousReportPath) || string.IsNullOrWhiteSpace(options.CurrentReportPath))
         {
-            Console.Error.WriteLine("Missing required options for report diff.");
-            Console.Error.WriteLine("Usage: report diff --previous <path> --current <path>");
+            ScanOutput.ShowError("Missing required options for report diff.", hint: "Usage: report diff --previous <path> --current <path>");
             return 2;
         }
 
@@ -29,8 +29,23 @@ internal static class ReportDiffCommand
         var current = ReadReport(currentPath);
 
         var diff = Analyze(previous, current);
-        PrintDiff(previousPath, currentPath, diff);
+        ScanOutput.PrintReportDiff(diff, previousPath, currentPath, verbosity);
         return 0;
+    }
+
+    public static int Execute(CliOptions options, bool? verbose = null, bool? quiet = null)
+    {
+        var verbosity = options.Verbosity;
+        if (verbose == true)
+        {
+            verbosity = LogVerbosity.Verbose;
+        }
+        else if (quiet == true)
+        {
+            verbosity = LogVerbosity.Quiet;
+        }
+
+        return Run(options, verbosity);
     }
 
     private static AuditReport ReadReport(string path)
@@ -89,47 +104,6 @@ internal static class ReportDiffCommand
             .Select(previousPair => previousPair.Value));
 
         return new ReportDiffResult(added, removed, regressed, improved);
-    }
-
-    private static void PrintDiff(string previousPath, string currentPath, ReportDiffResult diff)
-    {
-        Console.WriteLine("Report diff");
-        Console.WriteLine($"  Previous : {previousPath}");
-        Console.WriteLine($"  Current  : {currentPath}");
-        Console.WriteLine();
-        Console.WriteLine($"  New findings      : {diff.NewFindings.Count}");
-        Console.WriteLine($"  Fixed findings    : {diff.FixedFindings.Count}");
-        Console.WriteLine($"  Regressed severity: {diff.Regressed.Count}");
-        Console.WriteLine($"  Improved severity : {diff.Improved.Count}");
-
-        PrintFindingList("Top new findings", [.. diff.NewFindings.OrderBy(f => f.Severity).Take(10)]);
-        PrintFindingList("Top fixed findings", [.. diff.FixedFindings.OrderBy(f => f.Severity).Take(10)]);
-
-        if (diff.Regressed.Count > 0)
-        {
-            Console.WriteLine();
-            Console.WriteLine("Regressed severity:");
-            foreach (var (previous, current) in diff.Regressed.Take(10))
-            {
-                Console.WriteLine($"  - {current.Id} {current.DatabaseObject} ({previous.Severity} -> {current.Severity})");
-            }
-        }
-    }
-
-    private static void PrintFindingList(string title, IReadOnlyList<AuditFinding> findings)
-    {
-        Console.WriteLine();
-        Console.WriteLine($"{title}:");
-        if (findings.Count == 0)
-        {
-            Console.WriteLine("  (none)");
-            return;
-        }
-
-        foreach (var finding in findings)
-        {
-            Console.WriteLine($"  - {finding.Id} {finding.DatabaseObject} [{finding.Severity}]");
-        }
     }
 
     private static string BuildKey(AuditFinding finding) => $"{finding.Id}::{finding.DatabaseObject}";

@@ -7,7 +7,7 @@ internal static class SuppressionsCommand
         var subcommand = options.Subcommand?.Trim();
         if (string.IsNullOrWhiteSpace(subcommand))
         {
-            Console.Error.WriteLine("Missing suppressions subcommand. Use 'init' or 'validate'.");
+            ScanOutput.ShowError("Missing suppressions subcommand.", hint: "Use 'init' or 'validate'.");
             return 2;
         }
 
@@ -26,8 +26,7 @@ internal static class SuppressionsCommand
         var fullPath = Path.GetFullPath(path);
         if (File.Exists(fullPath) && !force)
         {
-            Console.Error.WriteLine($"Suppressions file already exists: {fullPath}");
-            Console.Error.WriteLine("Use --force to overwrite it.");
+            ScanOutput.ShowError($"Suppressions file already exists: {fullPath}", hint: "Use --force to overwrite it.");
             return 2;
         }
 
@@ -38,8 +37,8 @@ internal static class SuppressionsCommand
         }
 
         File.WriteAllText(fullPath, SampleSuppressionsContent + Environment.NewLine);
-        Console.WriteLine($"Created suppressions file: {fullPath}");
-        Console.WriteLine("Run validation with: suppressions validate --suppressions \"<path>\"");
+        ScanOutput.ShowSuccess($"Created suppressions file: {fullPath}");
+        ScanOutput.ShowInfo($"Run validation with: suppressions validate --suppressions \"{fullPath}\"");
         return 0;
     }
 
@@ -48,33 +47,14 @@ internal static class SuppressionsCommand
         var fullPath = Path.GetFullPath(path);
         var result = SuppressionFileLoader.Validate(fullPath);
 
-        Console.WriteLine($"Suppressions file: {fullPath}");
-        Console.WriteLine($"Rules parsed: {result.RuleCount}");
+        ScanOutput.PrintSuppressionsValidationResult(fullPath, result);
 
-        foreach (var warning in result.Warnings)
-        {
-            Console.WriteLine($"Warning: {warning}");
-        }
-
-        if (result.IsValid)
-        {
-            Console.WriteLine("Validation passed.");
-            return 0;
-        }
-
-        Console.Error.WriteLine("Validation failed.");
-        foreach (var error in result.Errors)
-        {
-            Console.Error.WriteLine($"Error: {error}");
-        }
-
-        return 2;
+        return result.IsValid ? 0 : 2;
     }
 
     private static int RunUnknownSubcommand(string subcommand)
     {
-        Console.Error.WriteLine($"Unknown suppressions subcommand: {subcommand}");
-        Console.Error.WriteLine("Use 'suppressions init' or 'suppressions validate'.");
+        ScanOutput.ShowError($"Unknown suppressions subcommand: {subcommand}", hint: "Use 'suppressions init' or 'suppressions validate'.");
         return 2;
     }
 

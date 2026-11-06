@@ -1,4 +1,3 @@
-using Spectre.Console;
 using SqlAudit.Cli;
 using SqlAudit.Core.Execution;
 using SqlAudit.Core.Models;
@@ -31,21 +30,20 @@ static async Task<int> RunAsync(string[] args)
     var parseResult = CliOptions.TryParse(args);
     if (!parseResult.Success)
     {
-        return await HandleParseFailureAsync(parseResult).ConfigureAwait(false);
+        return HandleParseFailure(parseResult);
     }
 
     return await DispatchCommandAsync(parseResult.Options!).ConfigureAwait(false);
 }
 
-static async Task<int> HandleParseFailureAsync(ParseResult parseResult)
+static int HandleParseFailure(ParseResult parseResult)
 {
     if (parseResult.ErrorMessage is null)
     {
         return 0;
     }
 
-    await Console.Error.WriteLineAsync(parseResult.ErrorMessage).ConfigureAwait(false);
-    await Console.Error.WriteLineAsync().ConfigureAwait(false);
+    ScanOutput.ShowError(parseResult.ErrorMessage);
     CliOptions.PrintHelp();
     return 2;
 }
@@ -69,7 +67,7 @@ static Task<int> DispatchCommandAsync(CliOptions options)
 
     if (!IsCommand(options.Command, "scan"))
     {
-        return HandleUnknownCommandAsync(options.Command);
+        return Task.FromResult(HandleUnknownCommand(options.Command));
     }
 
     return RunScanCommandAsync(options);
@@ -78,16 +76,16 @@ static Task<int> DispatchCommandAsync(CliOptions options)
 static bool IsCommand(string actual, string expected) =>
     string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
 
-static async Task<int> HandleUnknownCommandAsync(string command)
+static int HandleUnknownCommand(string command)
 {
-    await Console.Error.WriteLineAsync($"Unknown command: {command}").ConfigureAwait(false);
+    ScanOutput.ShowError($"Unknown command: {command}");
     CliOptions.PrintHelp();
     return 2;
 }
 
 static async Task<int> RunScanCommandAsync(CliOptions options)
 {
-    var resolveResult = await ResolveRunOptionsAsync(options).ConfigureAwait(false);
+    var resolveResult = ResolveRunOptions(options);
     if (!resolveResult.Success)
     {
         return resolveResult.ExitCode;
@@ -115,15 +113,14 @@ static async Task<int> RunScanCommandAsync(CliOptions options)
 
     if (IsFailThresholdBreached(report, resolved.FailOnSeverity, out var threshold, out var matchingCount))
     {
-        await Console.Error.WriteLineAsync($"Fail-on threshold hit: {threshold} ({matchingCount} finding(s) at or above threshold).")
-            .ConfigureAwait(false);
+        ScanOutput.ShowError($"Fail-on threshold hit: {threshold} ({matchingCount} finding(s) at or above threshold).");
         return 3;
     }
 
     return 0;
 }
 
-static async Task<ResolveRunOptionsResult> ResolveRunOptionsAsync(CliOptions options)
+static ResolveRunOptionsResult ResolveRunOptions(CliOptions options)
 {
     try
     {
@@ -134,7 +131,7 @@ static async Task<ResolveRunOptionsResult> ResolveRunOptionsAsync(CliOptions opt
     }
     catch (Exception ex)
     {
-        await Console.Error.WriteLineAsync(ex.Message).ConfigureAwait(false);
+        ScanOutput.ShowError(ex.Message);
         return ResolveRunOptionsResult.Fail(2);
     }
 }
@@ -259,11 +256,7 @@ static void CleanFixesDirectory(string fixesDirectory, LogVerbosity verbosity)
 {
     foreach (var file in Directory.EnumerateFiles(fixesDirectory, "*.sql", SearchOption.AllDirectories))
     {
-        if (verbosity >= LogVerbosity.Normal)
-        {
-            AnsiConsole.MarkupLine($"[grey]Deleting existing fix script:[/] [green]{file}[/]");
-        }
-
+        ScanOutput.PrintDeletingFixScript(verbosity, file);
         File.Delete(file);
     }
 }
@@ -325,8 +318,9 @@ static DatabaseSnapshot? TryLoadSnapshot(string dataModelPath)
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"Warning: Failed to load previous snapshot from '{dataModelPath}'. Growth forecasts will not be calculated.");
-        Console.Error.WriteLine($"Details: {ex.Message}");
+        ScanOutput.ShowWarning(
+            $"Warning: Failed to load previous snapshot from '{dataModelPath}'. Growth forecasts will not be calculated.",
+            details: ex.Message);
         return null;
     }
 }
@@ -399,12 +393,7 @@ static int HandleUnhandledException(Exception ex)
 
 static int PrintError(string message, string? details, int exitCode)
 {
-    Console.Error.WriteLine(message);
-    if (!string.IsNullOrWhiteSpace(details))
-    {
-        Console.Error.WriteLine($"Details: {details}");
-    }
-
+    ScanOutput.ShowError(message, details: details);
     return exitCode;
 }
 
@@ -415,9 +404,10 @@ static int HandleDatabaseException(DbException ex)
         || message.Contains("cannot open database", StringComparison.OrdinalIgnoreCase)
         || message.Contains("password", StringComparison.OrdinalIgnoreCase))
     {
-        Console.Error.WriteLine("Database authentication failed.");
-        Console.Error.WriteLine("Check connection string values for server, username, password, and database.");
-        Console.Error.WriteLine($"Details: {message}");
+        ScanOutput.ShowError(
+            "Database authentication failed.",
+            details: message,
+            hint: "Check connection string values for server, username, password, and database.");
         return 1;
     }
 
@@ -426,13 +416,13 @@ static int HandleDatabaseException(DbException ex)
         || message.Contains("server was not found", StringComparison.OrdinalIgnoreCase)
         || message.Contains("could not open a connection", StringComparison.OrdinalIgnoreCase))
     {
-        Console.Error.WriteLine("Could not connect to SQL Server.");
-        Console.Error.WriteLine("Check that SQL Server is running, reachable, and the port is correct.");
-        Console.Error.WriteLine($"Details: {message}");
+        ScanOutput.ShowError(
+            "Could not connect to SQL Server.",
+            details: message,
+            hint: "Check that SQL Server is running, reachable, and the port is correct.");
         return 1;
     }
 
-    Console.Error.WriteLine("Database operation failed.");
-    Console.Error.WriteLine($"Details: {message}");
+    ScanOutput.ShowError("Database operation failed.", details: message);
     return 1;
 }
