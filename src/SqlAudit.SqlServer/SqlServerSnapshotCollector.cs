@@ -39,7 +39,7 @@ public sealed class SqlServerSnapshotCollector
         }
 
         var schemaMetadata = await CollectSchemaMetadataAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
-        var performanceMetrics = await CollectPerformanceMetricsAsync(connection, profile, warnings, Report, cancellationToken).ConfigureAwait(false);
+        var performanceMetrics = await CollectPerformanceMetricsAsync(connection, profile, hasStatePermission, warnings, Report, cancellationToken).ConfigureAwait(false);
         var operationalHealth = await CollectOperationalHealthAsync(connection, warnings, Report, cancellationToken).ConfigureAwait(false);
 
         var snapshot = new DatabaseSnapshot
@@ -160,6 +160,7 @@ public sealed class SqlServerSnapshotCollector
     private static async Task<PerformanceMetrics> CollectPerformanceMetricsAsync(
         SqlConnection connection,
         AuditProfile profile,
+        bool hasStatePermission,
         List<CollectionWarning> warnings,
         Action<string> report,
         CancellationToken cancellationToken)
@@ -167,40 +168,52 @@ public sealed class SqlServerSnapshotCollector
         var includePhysical = profile == AuditProfile.Deep;
 
         report("Resource-intensive queries");
-        var topResourceIntensiveQueries = await TryReadOptionalListAsync(
-            () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
-            warnings,
-            "Resource-Intensive Queries").ConfigureAwait(false);
+        var topResourceIntensiveQueries = hasStatePermission
+            ? await TryReadOptionalListAsync(
+                () => ReadTopResourceIntensiveQueriesAsync(connection, cancellationToken),
+                warnings,
+                "Resource-Intensive Queries").ConfigureAwait(false)
+            : [];
 
         report("Wait statistics");
-        var topWaitStats = await TryReadOptionalListAsync(
-            () => ReadTopWaitStatsAsync(connection, cancellationToken),
-            warnings,
-            "Wait Statistics").ConfigureAwait(false);
+        var topWaitStats = hasStatePermission
+            ? await TryReadOptionalListAsync(
+                () => ReadTopWaitStatsAsync(connection, cancellationToken),
+                warnings,
+                "Wait Statistics").ConfigureAwait(false)
+            : [];
 
         report("Query Store regressions");
-        var queryStoreRegressions = await TryReadOptionalListAsync(
-            () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
-            warnings,
-            "Query Store Regressions").ConfigureAwait(false);
+        var queryStoreRegressions = hasStatePermission
+            ? await TryReadOptionalListAsync(
+                () => ReadQueryStoreRegressionsAsync(connection, cancellationToken),
+                warnings,
+                "Query Store Regressions").ConfigureAwait(false)
+            : [];
 
         report("Active blocking sessions");
-        var activeBlockingSessions = await TryReadOptionalListAsync(
-            () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
-            warnings,
-            "Active Blocking Sessions").ConfigureAwait(false);
+        var activeBlockingSessions = hasStatePermission
+            ? await TryReadOptionalListAsync(
+                () => ReadActiveBlockingSessionsAsync(connection, cancellationToken),
+                warnings,
+                "Active Blocking Sessions").ConfigureAwait(false)
+            : [];
 
         report("Deadlock summary");
-        var deadlockSummary = await TryReadOptionalAsync(
-            () => ReadDeadlockSummaryAsync(connection, cancellationToken),
-            warnings,
-            "Deadlock Summary").ConfigureAwait(false);
+        var deadlockSummary = hasStatePermission
+            ? await TryReadOptionalAsync(
+                () => ReadDeadlockSummaryAsync(connection, cancellationToken),
+                warnings,
+                "Deadlock Summary").ConfigureAwait(false)
+            : null;
 
         report("Missing index signals");
-        var missingIndexSignals = await TryReadOptionalListAsync(
-            () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
-            warnings,
-            "Missing Index Signals").ConfigureAwait(false);
+        var missingIndexSignals = hasStatePermission
+            ? await TryReadOptionalListAsync(
+                () => ReadMissingIndexSignalsAsync(connection, cancellationToken),
+                warnings,
+                "Missing Index Signals").ConfigureAwait(false)
+            : [];
 
         report("Index usage statistics");
         var indexUsage = await TryReadOptionalListAsync(
@@ -1009,11 +1022,6 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false))
-        {
-            return [];
-        }
-
         const string sql = """
             SELECT TOP (10)
                 COALESCE(CONVERT(varchar(34), qs.query_hash, 1), N'0x0') AS query_hash,
@@ -1062,11 +1070,6 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false))
-        {
-            return [];
-        }
-
         const string sql = """
             SELECT TOP (12)
                 ws.wait_type,
@@ -1134,8 +1137,7 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false)
-            || !await IsQueryStoreEnabledAsync(connection, cancellationToken).ConfigureAwait(false))
+        if (!await IsQueryStoreEnabledAsync(connection, cancellationToken).ConfigureAwait(false))
         {
             return [];
         }
@@ -1211,11 +1213,6 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false))
-        {
-            return [];
-        }
-
         const string sql = """
             SELECT TOP (10)
                 r.blocking_session_id,
@@ -1254,11 +1251,6 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
         const string sql = """
             WITH deadlocks AS
             (
@@ -1301,11 +1293,6 @@ public sealed class SqlServerSnapshotCollector
         SqlConnection connection,
         CancellationToken cancellationToken)
     {
-        if (!await HasStateReadPermissionAsync(connection, cancellationToken).ConfigureAwait(false))
-        {
-            return [];
-        }
-
         const string sql = """
             SELECT TOP (15)
                 mid.object_id,
