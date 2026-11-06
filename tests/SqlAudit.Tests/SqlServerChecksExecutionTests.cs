@@ -444,6 +444,11 @@ public sealed class SqlServerChecksExecutionTests
         IReadOnlyList<FailedAgentJobInfo>? failedAgentJobs = null,
         IReadOnlyList<GlobalTraceFlagInfo>? globalTraceFlags = null,
         IReadOnlyList<SecurityHygieneIssueInfo>? securityHygieneIssues = null,
+        IReadOnlyList<FileGrowthHealthInfo>? fileGrowthHealth = null,
+        IReadOnlyList<QueryStoreRegressionInfo>? queryStoreRegressions = null,
+        IReadOnlyList<MissingIndexSignalInfo>? missingIndexSignals = null,
+        DeadlockSummaryInfo? deadlockSummary = null,
+        TempDbPressureInfo? tempDbPressure = null,
         TempDbConfigInfo? tempDbConfig = null,
         MemoryPressureInfo? memoryPressure = null,
         PlanCacheInfo? planCache = null,
@@ -489,6 +494,11 @@ public sealed class SqlServerChecksExecutionTests
                 FailedAgentJobs = failedAgentJobs ?? [],
                 GlobalTraceFlags = globalTraceFlags ?? [],
                 SecurityHygieneIssues = securityHygieneIssues ?? [],
+                FileGrowthHealth = fileGrowthHealth ?? [],
+                QueryStoreRegressions = queryStoreRegressions ?? [],
+                MissingIndexSignals = missingIndexSignals ?? [],
+                DeadlockSummary = deadlockSummary,
+                TempDbPressure = tempDbPressure,
                 TempDbConfig = tempDbConfig,
                 MemoryPressure = memoryPressure,
                 PlanCache = planCache,
@@ -1403,5 +1413,145 @@ public sealed class SqlServerChecksExecutionTests
         var finding = Assert.Single(run.Report.Findings);
         Assert.Equal("[dbo].[Orders]", finding.DatabaseObject);
         Assert.Single(run.Snapshot.Tables);
+    }
+
+    [Fact]
+    public async Task FileGrowthHealthCheck_FlagsPercentGrowthSmallGrowthAndMaxSizeProximity()
+    {
+        var context = CreateContext(fileGrowthHealth:
+        [
+            new FileGrowthHealthInfo(
+                FileId: 1,
+                LogicalName: "DbA_Data",
+                FileType: "ROWS",
+                PhysicalPath: "D:\\Data\\DbA.mdf",
+                SizeMb: 960m,
+                IsPercentGrowth: true,
+                GrowthValue: 10m,
+                MaxSizeMb: 1000m,
+                GrowthDescription: "10%",
+                Advisory: "Percent growth"),
+            new FileGrowthHealthInfo(
+                FileId: 2,
+                LogicalName: "DbA_Log",
+                FileType: "LOG",
+                PhysicalPath: "L:\\Logs\\DbA.ldf",
+                SizeMb: 256m,
+                IsPercentGrowth: false,
+                GrowthValue: 16m,
+                MaxSizeMb: null,
+                GrowthDescription: "16 MB",
+                Advisory: "Small growth"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("FILE-001", context);
+
+        Assert.Equal(3, findings.Count);
+        Assert.Contains(findings, f => string.Equals(f.Id, "FILE-001-MAXSIZE-1", StringComparison.Ordinal) && f.Severity == AuditSeverity.High);
+        Assert.Contains(findings, f => string.Equals(f.Id, "FILE-001-PERCENT-1", StringComparison.Ordinal) && f.Severity == AuditSeverity.Medium && f.FixScript!.Contains("FILEGROWTH = 512MB", StringComparison.Ordinal));
+        Assert.Contains(findings, f => string.Equals(f.Id, "FILE-001-SMALLGROWTH-2", StringComparison.Ordinal) && f.Severity == AuditSeverity.Low && f.FixScript!.Contains("FILEGROWTH = 256MB", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task QueryStoreRegressionCheck_FlagsRegressedQueries()
+    {
+        var context = CreateContext(queryStoreRegressions:
+        [
+            new QueryStoreRegressionInfo(
+                QueryId: 42,
+                BaselineAverageDurationMs: 10m,
+                RecentAverageDurationMs: 45m,
+                RegressionRatio: 4.5m,
+                RecentExecutions: 120,
+                LastExecutionUtc: DateTimeOffset.UtcNow,
+                QueryText: "SELECT * FROM dbo.Orders WHERE CustomerId = @p0"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("QRY-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("QRY-001-42", finding.Id);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task ActiveBlockingCheck_FlagsSustainedBlockingSessions()
+    {
+        var context = CreateContext(blockingSessions:
+        [
+            new BlockingSessionInfo(
+                BlockingSessionId: 55,
+                BlockedSessionId: 72,
+                WaitType: "LCK_M_X",
+                WaitDurationMs: 45_000,
+                WaitResource: "KEY: 5:72057594040549376",
+                QueryText: "UPDATE dbo.Orders SET Status = 2 WHERE Id = 10"),
+        ]);
+
+        var findings = await ExecuteCheckAsync("CONC-001", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("CONC-001-SESSION-72-BY-55", finding.Id);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task RecentDeadlocksCheck_FlagsDeadlocksInLast24Hours()
+    {
+        var context = CreateContext(deadlockSummary: new DeadlockSummaryInfo(
+            DeadlockCountLast24Hours: 6,
+            LastDeadlockUtc: DateTimeOffset.UtcNow.AddMinutes(-15)));
+
+        var findings = await ExecuteCheckAsync("CONC-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("CONC-002-DEADLOCKS-24H", finding.Id);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
+    }
+
+    [Fact]
+    public async Task MissingIndexSignalCheck_EmitsIndexCreationScript()
+    {
+        var context = CreateContext(missingIndexSignals:
+        [
+            new MissingIndexSignalInfo(
+                ObjectId: 101,
+                SchemaName: "dbo",
+                TableName: "Orders",
+                EqualityColumns: "[CustomerId]",
+                InequalityColumns: "[CreatedUtc]",
+                IncludedColumns: "[TotalAmount]",
+                UserSeeks: 1500,
+                UserScans: 50,
+                AverageTotalCost: 12.5m,
+                AverageUserImpactPercent: 88.5m,
+                EstimatedBenefit: 171_468m,
+                ExistingIndexCount: 3,
+                GuardrailNote: "Signal passes read-benefit guardrails."),
+        ]);
+
+        var findings = await ExecuteCheckAsync("IDX-012", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("IDX-012-101-1", finding.Id);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+        Assert.Contains("CREATE NONCLUSTERED INDEX", finding.FixScript, StringComparison.Ordinal);
+        Assert.Contains("([CustomerId], [CreatedUtc]) INCLUDE ([TotalAmount]) WITH (ONLINE = ON)", finding.FixScript, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TempDbPressureCheck_FlagsHighVersionStoreOrLowFreeSpace()
+    {
+        var context = CreateContext(tempDbPressure: new TempDbPressureInfo(
+            VersionStoreMb: 5000m,
+            UserObjectMb: 500m,
+            InternalObjectMb: 500m,
+            UnallocatedMb: 200m));
+
+        var findings = await ExecuteCheckAsync("TMPDB-003", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Equal("TMPDB-003-SPACE-PRESSURE", finding.Id);
+        Assert.Equal(AuditSeverity.High, finding.Severity);
     }
 }

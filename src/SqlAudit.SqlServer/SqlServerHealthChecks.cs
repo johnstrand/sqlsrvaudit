@@ -61,6 +61,12 @@ public static class SqlServerHealthChecks
         new("MAINT-002", QuickEnabled: true, DeepEnabled: true, () => new FailedAgentJobsCheck()),
         new("CFG-006", QuickEnabled: true, DeepEnabled: true, () => new HarmfulTraceFlagCheck()),
         new("SEC-001", QuickEnabled: true, DeepEnabled: true, () => new SecurityHygieneCheck()),
+        new("FILE-001", QuickEnabled: true, DeepEnabled: true, () => new FileGrowthHealthCheck()),
+        new("QRY-001", QuickEnabled: true, DeepEnabled: true, () => new QueryStoreRegressionCheck()),
+        new("CONC-001", QuickEnabled: true, DeepEnabled: true, () => new ActiveBlockingCheck()),
+        new("CONC-002", QuickEnabled: true, DeepEnabled: true, () => new RecentDeadlocksCheck()),
+        new("IDX-012", QuickEnabled: true, DeepEnabled: true, () => new MissingIndexSignalCheck()),
+        new("TMPDB-003", QuickEnabled: true, DeepEnabled: true, () => new TempDbPressureCheck()),
     ];
 
     public static IReadOnlyCollection<IHealthCheck> Create(
