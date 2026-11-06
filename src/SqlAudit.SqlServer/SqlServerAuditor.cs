@@ -48,11 +48,33 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
         var snapshot = await SqlServerSnapshotCollector
             .CollectAsync(connectionString, profile, excludedSchemas, excludedTables, cancellationToken, collectionProgress, commandTimeoutSeconds)
             .ConfigureAwait(false);
+
+        return await RunFromSnapshotAsync(
+                snapshot,
+                options,
+                profile,
+                excludedSchemas,
+                excludedTables,
+                checkProgress,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<SqlServerAuditRunResult> RunFromSnapshotAsync(
+        DatabaseSnapshot snapshot,
+        AuditOptions? options = null,
+        AuditProfile profile = AuditProfile.Deep,
+        IReadOnlyCollection<string>? excludedSchemas = null,
+        IReadOnlyCollection<string>? excludedTables = null,
+        IProgress<string>? checkProgress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var filteredSnapshot = SqlServerSnapshotCollector.ApplyExclusions(snapshot, excludedSchemas, excludedTables);
         var runner = new HealthCheckRunner(customChecks ?? SqlServerHealthChecks.Create(profile));
 
         var context = new HealthCheckContext
         {
-            Snapshot = snapshot,
+            Snapshot = filteredSnapshot,
             Options = options ?? AuditProfileDefaults.For(profile),
         };
 
@@ -62,37 +84,37 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
 
         var report = new AuditReport
         {
-            ServerName = snapshot.ServerName,
-            DatabaseName = snapshot.DatabaseName,
-            Edition = snapshot.Edition,
-            ProductVersion = snapshot.ProductVersion,
-            CapturedAtUtc = snapshot.CapturedAtUtc,
+            ServerName = filteredSnapshot.ServerName,
+            DatabaseName = filteredSnapshot.DatabaseName,
+            Edition = filteredSnapshot.Edition,
+            ProductVersion = filteredSnapshot.ProductVersion,
+            CapturedAtUtc = filteredSnapshot.CapturedAtUtc,
             ExcludedSchemas = excludedSchemaList,
             ExcludedTables = excludedTableList,
-            TopResourceIntensiveQueries = snapshot.TopResourceIntensiveQueries,
-            TopWaitStats = snapshot.TopWaitStats,
-            QueryStoreRegressions = snapshot.QueryStoreRegressions,
-            ActiveBlockingSessions = snapshot.ActiveBlockingSessions,
-            DeadlockSummary = snapshot.DeadlockSummary,
-            MissingIndexSignals = snapshot.MissingIndexSignals,
-            LogHealth = snapshot.LogHealth,
-            TempDbPressure = snapshot.TempDbPressure,
-            FileGrowthHealth = snapshot.FileGrowthHealth,
-            BackupPosture = snapshot.BackupPosture,
-            SecurityHygieneIssues = snapshot.SecurityHygieneIssues,
-            CollectionWarnings = snapshot.CollectionWarnings,
-            ServerConfigurations = snapshot.ServerConfigurations,
-            LastDbccCheckDbUtc = snapshot.LastDbccCheckDbUtc,
-            TempDbConfig = snapshot.TempDbConfig,
-            SleepingTransactions = snapshot.SleepingTransactions,
-            MemoryPressure = snapshot.MemoryPressure,
-            FileIoLatency = snapshot.FileIoLatency,
-            PlanCache = snapshot.PlanCache,
-            TableCompression = snapshot.TableCompression,
-            DatabaseOptions = snapshot.DatabaseOptions,
-            VolumeStats = snapshot.VolumeStats,
-            FailedAgentJobs = snapshot.FailedAgentJobs,
-            GlobalTraceFlags = snapshot.GlobalTraceFlags,
+            TopResourceIntensiveQueries = filteredSnapshot.TopResourceIntensiveQueries,
+            TopWaitStats = filteredSnapshot.TopWaitStats,
+            QueryStoreRegressions = filteredSnapshot.QueryStoreRegressions,
+            ActiveBlockingSessions = filteredSnapshot.ActiveBlockingSessions,
+            DeadlockSummary = filteredSnapshot.DeadlockSummary,
+            MissingIndexSignals = filteredSnapshot.MissingIndexSignals,
+            LogHealth = filteredSnapshot.LogHealth,
+            TempDbPressure = filteredSnapshot.TempDbPressure,
+            FileGrowthHealth = filteredSnapshot.FileGrowthHealth,
+            BackupPosture = filteredSnapshot.BackupPosture,
+            SecurityHygieneIssues = filteredSnapshot.SecurityHygieneIssues,
+            CollectionWarnings = filteredSnapshot.CollectionWarnings,
+            ServerConfigurations = filteredSnapshot.ServerConfigurations,
+            LastDbccCheckDbUtc = filteredSnapshot.LastDbccCheckDbUtc,
+            TempDbConfig = filteredSnapshot.TempDbConfig,
+            SleepingTransactions = filteredSnapshot.SleepingTransactions,
+            MemoryPressure = filteredSnapshot.MemoryPressure,
+            FileIoLatency = filteredSnapshot.FileIoLatency,
+            PlanCache = filteredSnapshot.PlanCache,
+            TableCompression = filteredSnapshot.TableCompression,
+            DatabaseOptions = filteredSnapshot.DatabaseOptions,
+            VolumeStats = filteredSnapshot.VolumeStats,
+            FailedAgentJobs = filteredSnapshot.FailedAgentJobs,
+            GlobalTraceFlags = filteredSnapshot.GlobalTraceFlags,
             Findings = [.. runResult.Findings
                 .OrderBy(f => f.Severity)
                 .ThenBy(f => f.Category, StringComparer.Ordinal)
@@ -101,6 +123,6 @@ public sealed class SqlServerAuditor(IEnumerable<IHealthCheck>? checks = null)
             SuppressionSummary = new SuppressionSummary(0, 0, 0, 0, runResult.Findings.Count),
         };
 
-        return new SqlServerAuditRunResult(snapshot, report);
+        return new SqlServerAuditRunResult(filteredSnapshot, report);
     }
 }

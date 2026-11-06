@@ -3,6 +3,9 @@ using SqlAudit.Core.Models;
 using SqlAudit.SqlServer;
 using System.Diagnostics;
 using System.IO;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace SqlAudit.Cli;
 
@@ -168,11 +171,12 @@ internal static class ScanOutput
             }
         }
 
-        if (isVerbose && diff.Improved.Count > 0)
+        if (diff.Improved.Count > 0)
         {
+            var improvedList = diff.Improved.Take(limit).ToList();
             AnsiConsole.WriteLine();
-            AnsiConsole.MarkupLine("[green bold]Improved severity:[/]");
-            foreach (var (prev, curr) in diff.Improved)
+            AnsiConsole.MarkupLine($"[green bold]{(isVerbose ? "Improved severity:" : "Top improved severity:")}[/]");
+            foreach (var (prev, curr) in improvedList)
             {
                 var prevColor = SeverityMarkup.GetValueOrDefault(prev.Severity, "grey");
                 var currColor = SeverityMarkup.GetValueOrDefault(curr.Severity, "grey");
@@ -181,6 +185,130 @@ internal static class ScanOutput
         }
 
         AnsiConsole.Write(new Rule().RuleStyle("grey"));
+    }
+
+    public static void PrintReportDiffJson(
+        ReportDiffResult diff,
+        string previousPath,
+        string currentPath,
+        LogVerbosity verbosity)
+    {
+        if (verbosity == LogVerbosity.Quiet)
+        {
+            return;
+        }
+
+        var payload = new
+        {
+            PreviousPath = previousPath,
+            CurrentPath = currentPath,
+            Summary = new
+            {
+                NewCount = diff.NewFindings.Count,
+                FixedCount = diff.FixedFindings.Count,
+                RegressedCount = diff.Regressed.Count,
+                ImprovedCount = diff.Improved.Count,
+            },
+            NewFindings = diff.NewFindings,
+            FixedFindings = diff.FixedFindings,
+            Regressed = diff.Regressed.Select(r => new
+            {
+                r.Current.Id,
+                r.Current.DatabaseObject,
+                PreviousSeverity = r.Previous.Severity,
+                CurrentSeverity = r.Current.Severity,
+                Finding = r.Current,
+            }).ToArray(),
+            Improved = diff.Improved.Select(i => new
+            {
+                i.Current.Id,
+                i.Current.DatabaseObject,
+                PreviousSeverity = i.Previous.Severity,
+                CurrentSeverity = i.Current.Severity,
+                Finding = i.Current,
+            }).ToArray(),
+        };
+
+#pragma warning disable CA1869 // Cache and reuse 'JsonSerializerOptions' instances
+        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            Converters = { new JsonStringEnumConverter() },
+        });
+#pragma warning restore CA1869 // Cache and reuse 'JsonSerializerOptions' instances
+
+        AnsiConsole.Profile.Out.Writer.WriteLine(json);
+    }
+
+    public static void PrintReportDiffMarkdown(
+        ReportDiffResult diff,
+        string previousPath,
+        string currentPath,
+        LogVerbosity verbosity)
+    {
+        if (verbosity == LogVerbosity.Quiet)
+        {
+            return;
+        }
+
+        var sb = new StringBuilder();
+        sb.AppendLine("# Report Diff");
+        sb.AppendLine();
+        sb.AppendLine($"- **Previous**: `{previousPath}`");
+        sb.AppendLine($"- **Current**: `{currentPath}`");
+        sb.AppendLine();
+        sb.AppendLine("## Summary");
+        sb.AppendLine();
+        sb.AppendLine("| Metric | Count |");
+        sb.AppendLine("| --- | ---: |");
+        sb.AppendLine($"| New findings | {diff.NewFindings.Count} |");
+        sb.AppendLine($"| Fixed findings | {diff.FixedFindings.Count} |");
+        sb.AppendLine($"| Regressed severity | {diff.Regressed.Count} |");
+        sb.AppendLine($"| Improved severity | {diff.Improved.Count} |");
+
+        AppendMarkdownFindingSection(sb, "New Findings", diff.NewFindings);
+        AppendMarkdownFindingSection(sb, "Fixed Findings", diff.FixedFindings);
+        AppendMarkdownSeverityTransitionSection(sb, "Regressed Severity", diff.Regressed);
+        AppendMarkdownSeverityTransitionSection(sb, "Improved Severity", diff.Improved);
+
+        AnsiConsole.Profile.Out.Writer.Write(sb.ToString());
+    }
+
+    private static void AppendMarkdownFindingSection(StringBuilder sb, string title, IReadOnlyList<AuditFinding> findings)
+    {
+        sb.AppendLine();
+        sb.AppendLine($"## {title}");
+        sb.AppendLine();
+        if (findings.Count == 0)
+        {
+            sb.AppendLine("_(none)_");
+            return;
+        }
+
+        foreach (var finding in findings.OrderBy(f => f.Severity))
+        {
+            sb.AppendLine($"- `{finding.Id}` **{finding.DatabaseObject}** [{finding.Severity}] — {finding.Title}");
+        }
+    }
+
+    private static void AppendMarkdownSeverityTransitionSection(
+        StringBuilder sb,
+        string title,
+        IReadOnlyList<(AuditFinding Previous, AuditFinding Current)> transitions)
+    {
+        if (transitions.Count == 0)
+        {
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"## {title}");
+        sb.AppendLine();
+        foreach (var (prev, curr) in transitions)
+        {
+            sb.AppendLine($"- `{curr.Id}` **{curr.DatabaseObject}** ({prev.Severity} -> {curr.Severity})");
+        }
     }
 
     private static void PrintDiffFindingList(string title, IReadOnlyList<AuditFinding> findings)
@@ -274,6 +402,29 @@ internal static class ScanOutput
         }
 
         return await RunAuditWithBarsAsync(auditor, resolved, totalChecks, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public static async Task<SqlServerAuditRunResult> RunAuditFromSnapshotAsync(
+        LogVerbosity verbosity,
+        SqlServerAuditor auditor,
+        DatabaseSnapshot snapshot,
+        EffectiveRunOptions resolved,
+        CancellationToken cancellationToken)
+    {
+        if (verbosity != LogVerbosity.Quiet)
+        {
+            AnsiConsole.MarkupLine("[grey]      Evaluating health checks against loaded snapshot...[/]");
+        }
+
+        return await auditor.RunFromSnapshotAsync(
+                snapshot,
+                resolved.AuditOptions,
+                resolved.Profile,
+                resolved.ExcludeSchemas,
+                resolved.ExcludeTables,
+                checkProgress: null,
+                cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 

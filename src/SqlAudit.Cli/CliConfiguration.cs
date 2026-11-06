@@ -27,6 +27,13 @@ internal enum ConfigPreset
     DeepStrict,
 }
 
+internal enum ReportDiffFormat
+{
+    Console,
+    Json,
+    Markdown,
+}
+
 internal sealed class CliOptions
 {
     public required string Command { get; init; }
@@ -36,6 +43,12 @@ internal sealed class CliOptions
     public string? PreviousReportPath { get; init; }
 
     public string? CurrentReportPath { get; init; }
+
+    public string? FromSnapshotPath { get; init; }
+
+    public bool FailOnRegression { get; init; }
+
+    public ReportDiffFormat? DiffFormat { get; init; }
 
     public string? ConnectionString { get; init; }
 
@@ -114,7 +127,7 @@ internal sealed class CliOptions
             return ParseResult.Fail(commandError!);
         }
 
-        if (!TryParseEnumOptions(parseResult, parser, out var enumOptions, out var enumError))
+        if (!TryParseEnumOptions(parseResult, parser, command, out var enumOptions, out var enumError))
         {
             return ParseResult.Fail(enumError!);
         }
@@ -125,6 +138,9 @@ internal sealed class CliOptions
             Subcommand = subcommand,
             PreviousReportPath = parseResult.GetValue(parser.Previous),
             CurrentReportPath = parseResult.GetValue(parser.Current),
+            FromSnapshotPath = parseResult.GetValue(parser.FromSnapshot),
+            FailOnRegression = parseResult.GetValue(parser.FailOnRegression),
+            DiffFormat = enumOptions.DiffFormat,
             ConnectionString = parseResult.GetValue(parser.Connection),
             ConfigPath = parseResult.GetValue(parser.Config),
             OutputDirectory = parseResult.GetValue(parser.Output),
@@ -293,21 +309,58 @@ internal sealed class CliOptions
     private static bool TryParseEnumOptions(
         System.CommandLine.ParseResult parseResult,
         CliParser parser,
+        string command,
         out ParsedEnumOptions result,
         out string? error)
     {
-        result = new ParsedEnumOptions(Profile: null, Format: null, Preset: null, FailOnSeverity: null);
+        result = new ParsedEnumOptions(Profile: null, Format: null, DiffFormat: null, Preset: null, FailOnSeverity: null);
+
+        OutputFormat? format = null;
+        ReportDiffFormat? diffFormat = null;
+        var rawFormat = parseResult.GetValue(parser.Format);
+
+        if (string.Equals(command, "report", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!TryParseDiffFormat(rawFormat, out diffFormat, out error))
+            {
+                return false;
+            }
+        }
+        else if (!TryParseFormat(rawFormat, out format, out error))
+        {
+            return false;
+        }
 
         if (!TryParseProfile(parseResult.GetValue(parser.Profile), out var profile, out error)
-            || !TryParseFormat(parseResult.GetValue(parser.Format), out var format, out error)
             || !TryParsePreset(parseResult.GetValue(parser.Preset), out var preset, out error)
             || !TryParseFailOnSeverity(parseResult.GetValue(parser.FailOn), out var failOn, out error))
         {
             return false;
         }
 
-        result = new ParsedEnumOptions(profile, format, preset, failOn);
+        result = new ParsedEnumOptions(profile, format, diffFormat, preset, failOn);
         return true;
+    }
+
+    private static bool TryParseDiffFormat(string? value, out ReportDiffFormat? format, out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            format = null;
+            error = null;
+            return true;
+        }
+
+        if (Enum.TryParse<ReportDiffFormat>(value, ignoreCase: true, out var parsed))
+        {
+            format = parsed;
+            error = null;
+            return true;
+        }
+
+        format = null;
+        error = $"Invalid diff format: {value}. Allowed: console, json, markdown.";
+        return false;
     }
 
     private static bool TryParseProfile(string? value, out AuditProfile? profile, out string? error)
@@ -424,6 +477,7 @@ internal sealed class CliOptions
     private sealed record ParsedEnumOptions(
         AuditProfile? Profile,
         OutputFormat? Format,
+        ReportDiffFormat? DiffFormat,
         ConfigPreset? Preset,
         AuditSeverity? FailOnSeverity);
 
@@ -439,9 +493,10 @@ internal sealed class CliOptions
         return new CliParser
         {
             Connection = CreateOption<string?>("--connection", "SQL Server connection string"),
+            FromSnapshot = CreateOption<string?>("--from-snapshot", "Run offline analysis from a saved data-model.json snapshot file"),
             Config = CreateOption<string?>("--config", "Project config JSON path or preset alias (preset:quick|preset:deep|preset:deep-strict)"),
             Profile = CreateOption<string?>("--profile", "Check profile: quick|deep"),
-            Format = CreateOption<string?>("--format", "Report output format: markdown|json|both"),
+            Format = CreateOption<string?>("--format", "Report output format: markdown|json|both (or console|json|markdown for report diff)"),
             Checks = CreateOption<string?>("--checks", "Comma-separated check IDs"),
             Output = CreateOption<string?>("--output", "Output directory"),
             Markdown = CreateOption<string?>("--markdown", "Markdown report path"),
@@ -456,6 +511,7 @@ internal sealed class CliOptions
             Quiet = CreateOption<bool>("--quiet", "Show minimal runtime output"),
             Preset = CreateOption<string?>("--preset", "Config preset: quick|deep|deep-strict"),
             FailOn = CreateOption<string?>("--fail-on", "Exit non-zero if findings meet threshold"),
+            FailOnRegression = CreateOption<bool>("--fail-on-regression", "Exit non-zero if new or regressed findings are detected"),
             Previous = CreateOption<string?>("--previous", "Baseline JSON report path"),
             Current = CreateOption<string?>("--current", "Current JSON report path"),
             PathAlias = CreateOption<string?>("--path", "Alias for --suppressions"),
@@ -492,6 +548,7 @@ internal sealed class CliOptions
     private static void AddScanOptions(CliParser parser)
     {
         parser.Scan.Add(parser.Connection);
+        parser.Scan.Add(parser.FromSnapshot);
         parser.Scan.Add(parser.Config);
         parser.Scan.Add(parser.Profile);
         parser.Scan.Add(parser.Format);
@@ -564,6 +621,8 @@ internal sealed class CliOptions
         {
             parser.Previous,
             parser.Current,
+            parser.Format,
+            parser.FailOnRegression,
             parser.Verbose,
             parser.Quiet,
         };
@@ -621,6 +680,8 @@ internal sealed class CliOptions
 
         public Option<string?> Connection { get; set; } = null!;
 
+        public Option<string?> FromSnapshot { get; set; } = null!;
+
         public Option<string?> Config { get; set; } = null!;
 
         public Option<string?> Profile { get; set; } = null!;
@@ -654,6 +715,8 @@ internal sealed class CliOptions
         public Option<string?> Preset { get; set; } = null!;
 
         public Option<string?> FailOn { get; set; } = null!;
+
+        public Option<bool> FailOnRegression { get; set; } = null!;
 
         public Option<string?> Previous { get; set; } = null!;
 
@@ -773,6 +836,8 @@ internal sealed class EffectiveRunOptions
 {
     public required string ConnectionString { get; init; }
 
+    public string? FromSnapshotPath { get; init; }
+
     public required AuditProfile Profile { get; init; }
 
     public required OutputFormat Format { get; init; }
@@ -818,11 +883,15 @@ internal static class ProjectConfigurationResolver
         var fromFile = config?.AuditOptions?.ApplyTo(baseline) ?? baseline;
         var effectiveAuditOptions = cliOptions.AuditOptionOverrides.ApplyTo(fromFile);
 
+        var fromSnapshotPath = string.IsNullOrWhiteSpace(cliOptions.FromSnapshotPath)
+            ? null
+            : Path.GetFullPath(cliOptions.FromSnapshotPath);
+
         var connectionString = cliOptions.ConnectionString
             ?? config?.ConnectionString
             ?? environmentConnectionString;
 
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (string.IsNullOrWhiteSpace(connectionString) && string.IsNullOrWhiteSpace(fromSnapshotPath))
         {
             throw new InvalidOperationException("Connection string is required. Use --connection, --config, or SQLAUDIT_CONNECTION.");
         }
@@ -844,7 +913,8 @@ internal static class ProjectConfigurationResolver
 
         return new EffectiveRunOptions
         {
-            ConnectionString = connectionString,
+            ConnectionString = connectionString ?? string.Empty,
+            FromSnapshotPath = fromSnapshotPath,
             Profile = profile,
             Format = format,
             OutputDirectory = outputDir,

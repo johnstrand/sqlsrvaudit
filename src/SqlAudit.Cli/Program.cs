@@ -100,9 +100,18 @@ static async Task<int> RunScanCommandAsync(CliOptions options)
     ScanOutput.PrintRunConfiguration(verbosity, resolved, checks.Count);
 
     using var cts = CreateCancellationTokenSource();
-    await RunPreflightAsync(verbosity, resolved, cts.Token).ConfigureAwait(false);
+    SqlServerAuditRunResult auditRun;
+    if (!string.IsNullOrWhiteSpace(resolved.FromSnapshotPath))
+    {
+        var loadedSnapshot = LoadOfflineSnapshot(verbosity, resolved.FromSnapshotPath);
+        auditRun = await RunOfflineAuditAsync(verbosity, resolved, loadedSnapshot, checks, cts.Token).ConfigureAwait(false);
+    }
+    else
+    {
+        await RunPreflightAsync(verbosity, resolved, cts.Token).ConfigureAwait(false);
+        auditRun = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
+    }
 
-    var auditRun = await RunAuditAsync(verbosity, resolved, checks, cts.Token).ConfigureAwait(false);
     ScanOutput.PrintCollectionWarnings(verbosity, auditRun.Snapshot.CollectionWarnings);
     var reportWithForecasts = AttachGrowthForecasts(auditRun.Report, resolved.DataModelPath, auditRun.Snapshot);
     var report = ApplySuppressions(verbosity, reportWithForecasts, resolved.SuppressionsPath);
@@ -153,6 +162,42 @@ static async Task RunPreflightAsync(LogVerbosity verbosity, EffectiveRunOptions 
     var stepPreflight = ScanOutput.StartStep(verbosity, 2, 6, "Run connection preflight checks");
     var preflight = await SqlServerPreflight.RunAsync(resolved.ConnectionString, cancellationToken, resolved.CommandTimeout).ConfigureAwait(false);
     ScanOutput.EndStep(verbosity, stepPreflight, $"Connected to {preflight.ServerName} / {preflight.DatabaseName}");
+}
+
+static DatabaseSnapshot LoadOfflineSnapshot(LogVerbosity verbosity, string snapshotPath)
+{
+    var stepLoad = ScanOutput.StartStep(verbosity, 2, 6, "Load database snapshot file");
+    if (!File.Exists(snapshotPath))
+    {
+        throw new FileNotFoundException($"Snapshot file not found: {snapshotPath}");
+    }
+
+    var json = File.ReadAllText(snapshotPath);
+#pragma warning disable CA1869 // Cache and reuse 'JsonSerializerOptions' instances
+    var snapshot = JsonSerializer.Deserialize<DatabaseSnapshot>(json, new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true,
+    }) ?? throw new InvalidOperationException($"Could not parse snapshot file: {snapshotPath}");
+#pragma warning restore CA1869 // Cache and reuse 'JsonSerializerOptions' instances
+
+    ScanOutput.EndStep(verbosity, stepLoad, $"Loaded snapshot for {snapshot.ServerName} / {snapshot.DatabaseName}");
+    return snapshot;
+}
+
+static async Task<SqlServerAuditRunResult> RunOfflineAuditAsync(
+    LogVerbosity verbosity,
+    EffectiveRunOptions resolved,
+    DatabaseSnapshot snapshot,
+    IReadOnlyCollection<SqlAudit.Core.Abstractions.IHealthCheck> checks,
+    CancellationToken cancellationToken)
+{
+    var stepAudit = ScanOutput.StartStep(verbosity, 3, 6, "Run offline SQL Server analysis");
+    var auditor = new SqlServerAuditor(checks);
+    var run = await ScanOutput.RunAuditFromSnapshotAsync(
+            verbosity, auditor, snapshot, resolved, cancellationToken)
+        .ConfigureAwait(false);
+    ScanOutput.EndStep(verbosity, stepAudit, $"Analysis complete — {run.Report.Findings.Count} findings");
+    return run;
 }
 
 static async Task<SqlServerAuditRunResult> RunAuditAsync(

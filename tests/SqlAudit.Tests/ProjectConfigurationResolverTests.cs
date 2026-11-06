@@ -335,4 +335,20 @@ public sealed class ProjectConfigurationResolverTests
         var exception = Assert.Throws<InvalidOperationException>(() => ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null));
         Assert.Contains("Command timeout must be greater than zero", exception.Message, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Resolve_AllowsMissingConnectionStringWhenFromSnapshotPathIsProvided()
+    {
+        var cli = new CliOptions
+        {
+            Command = "scan",
+            FromSnapshotPath = "audit-output/data-model.json",
+            AuditOptionOverrides = new AuditOptionsOverrides(),
+        };
+
+        var resolved = ProjectConfigurationResolver.Resolve(cli, environmentConnectionString: null);
+
+        Assert.Equal(string.Empty, resolved.ConnectionString);
+        Assert.EndsWith(Path.Combine("audit-output", "data-model.json"), resolved.FromSnapshotPath!, StringComparison.OrdinalIgnoreCase);
+    }
 }

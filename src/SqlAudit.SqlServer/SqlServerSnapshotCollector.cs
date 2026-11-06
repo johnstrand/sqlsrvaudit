@@ -403,7 +403,7 @@ public sealed class SqlServerSnapshotCollector
         IReadOnlyList<FailedAgentJobInfo> FailedAgentJobs,
         IReadOnlyList<GlobalTraceFlagInfo> GlobalTraceFlags);
 
-    private static DatabaseSnapshot ApplyExclusions(
+    internal static DatabaseSnapshot ApplyExclusions(
         DatabaseSnapshot snapshot,
         IReadOnlyCollection<string>? excludedSchemas,
         IReadOnlyCollection<string>? excludedTables)

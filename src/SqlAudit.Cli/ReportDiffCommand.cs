@@ -29,7 +29,26 @@ internal static class ReportDiffCommand
         var current = ReadReport(currentPath);
 
         var diff = Analyze(previous, current);
-        ScanOutput.PrintReportDiff(diff, previousPath, currentPath, verbosity);
+        switch (options.DiffFormat)
+        {
+            case ReportDiffFormat.Json:
+                ScanOutput.PrintReportDiffJson(diff, previousPath, currentPath, verbosity);
+                break;
+            case ReportDiffFormat.Markdown:
+                ScanOutput.PrintReportDiffMarkdown(diff, previousPath, currentPath, verbosity);
+                break;
+            default:
+                ScanOutput.PrintReportDiff(diff, previousPath, currentPath, verbosity);
+                break;
+        }
+
+        if (options.FailOnRegression && (diff.NewFindings.Count > 0 || diff.Regressed.Count > 0))
+        {
+            ScanOutput.ShowError(
+                $"Regression detected: {diff.NewFindings.Count} new finding(s) and {diff.Regressed.Count} regressed finding(s).");
+            return 3;
+        }
+
         return 0;
     }
 

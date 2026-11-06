@@ -142,4 +142,41 @@ public sealed class CliOptionsTests
         Assert.NotNull(result.Options);
         Assert.Equal(45, result.Options!.CommandTimeout);
     }
+
+    [Fact]
+    public void TryParse_ParsesFromSnapshotOption()
+    {
+        var args = new[]
+        {
+            "scan",
+            "--from-snapshot", "audit-output/data-model.json",
+        };
+
+        var result = CliOptions.TryParse(args);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.NotNull(result.Options);
+        Assert.Equal("audit-output/data-model.json", result.Options!.FromSnapshotPath);
+    }
+
+    [Fact]
+    public void TryParse_ParsesReportDiffFormatAndFailOnRegression()
+    {
+        var args = new[]
+        {
+            "report",
+            "diff",
+            "--previous", "old.json",
+            "--current", "new.json",
+            "--format", "markdown",
+            "--fail-on-regression",
+        };
+
+        var result = CliOptions.TryParse(args);
+
+        Assert.True(result.Success, result.ErrorMessage);
+        Assert.NotNull(result.Options);
+        Assert.Equal(ReportDiffFormat.Markdown, result.Options!.DiffFormat);
+        Assert.True(result.Options.FailOnRegression);
+    }
 }

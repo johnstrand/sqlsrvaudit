@@ -1382,4 +1382,26 @@ public sealed class SqlServerChecksExecutionTests
         Assert.Equal("test_user", finding.DatabaseObject);
         Assert.Contains("Orphaned user detected", finding.Description, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task SqlServerAuditor_RunFromSnapshotAsync_AppliesExclusionsAndRunsChecks()
+    {
+        var context = CreateContext(
+            tables:
+            [
+                new TableInfo(1, "dbo", "Orders", 10_000, 50m, HasPrimaryKey: false, IsHeap: true),
+                new TableInfo(2, "archive", "OldOrders", 10_000, 50m, HasPrimaryKey: false, IsHeap: true),
+            ]);
+
+        var auditor = new SqlServerAuditor(SqlServerHealthChecks.Create(AuditProfile.Quick, ["PK-001"]));
+        var run = await auditor.RunFromSnapshotAsync(
+            context.Snapshot,
+            context.Options,
+            excludedSchemas: ["archive"],
+            cancellationToken: TestContext.Current.CancellationToken);
+
+        var finding = Assert.Single(run.Report.Findings);
+        Assert.Equal("[dbo].[Orders]", finding.DatabaseObject);
+        Assert.Single(run.Snapshot.Tables);
+    }
 }
