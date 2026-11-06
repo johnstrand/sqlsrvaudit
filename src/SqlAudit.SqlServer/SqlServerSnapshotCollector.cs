@@ -433,17 +433,8 @@ public sealed class SqlServerSnapshotCollector
             .Select(index => (index.ObjectId, index.IndexId))
             .ToHashSet();
 
-        return new DatabaseSnapshot
+        return snapshot with
         {
-            CapturedAtUtc = snapshot.CapturedAtUtc,
-            ServerName = snapshot.ServerName,
-            DatabaseName = snapshot.DatabaseName,
-            Edition = snapshot.Edition,
-            ProductVersion = snapshot.ProductVersion,
-            CompatibilityLevel = snapshot.CompatibilityLevel,
-            IsAzureSql = snapshot.IsAzureSql,
-            AutoCreateStatisticsOn = snapshot.AutoCreateStatisticsOn,
-            AutoUpdateStatisticsOn = snapshot.AutoUpdateStatisticsOn,
             Tables = tables,
             Indexes = indexes,
             IndexUsage = [.. snapshot.IndexUsage.Where(usage => indexKeys.Contains((usage.ObjectId, usage.IndexId)))],
@@ -454,32 +445,10 @@ public sealed class SqlServerSnapshotCollector
                     && !IsExcludedTable(foreignKey.ReferencedSchema, foreignKey.ReferencedTable, excludedSchemaSet, excludedTableSet)),],
             Statistics = [.. snapshot.Statistics.Where(stat => tableIds.Contains(stat.ObjectId))],
             IdentityColumns = [.. snapshot.IdentityColumns.Where(identity => tableIds.Contains(identity.ObjectId))],
-            TopResourceIntensiveQueries = snapshot.TopResourceIntensiveQueries,
-            TopWaitStats = snapshot.TopWaitStats,
-            QueryStoreRegressions = snapshot.QueryStoreRegressions,
-            ActiveBlockingSessions = snapshot.ActiveBlockingSessions,
-            DeadlockSummary = snapshot.DeadlockSummary,
             MissingIndexSignals = [.. snapshot.MissingIndexSignals.Where(signal => tableIds.Contains(signal.ObjectId))],
-            LogHealth = snapshot.LogHealth,
-            TempDbPressure = snapshot.TempDbPressure,
-            FileGrowthHealth = snapshot.FileGrowthHealth,
-            BackupPosture = snapshot.BackupPosture,
-            SecurityHygieneIssues = snapshot.SecurityHygieneIssues,
-            CollectionWarnings = snapshot.CollectionWarnings,
             Columns = [.. snapshot.Columns.Where(c => tableIds.Contains(c.ObjectId))],
             ColumnNullStats = [.. snapshot.ColumnNullStats.Where(c => tableIds.Contains(c.ObjectId))],
-            ServerConfigurations = snapshot.ServerConfigurations,
-            LastDbccCheckDbUtc = snapshot.LastDbccCheckDbUtc,
-            TempDbConfig = snapshot.TempDbConfig,
-            SleepingTransactions = snapshot.SleepingTransactions,
-            MemoryPressure = snapshot.MemoryPressure,
-            FileIoLatency = snapshot.FileIoLatency,
-            PlanCache = snapshot.PlanCache,
             TableCompression = [.. snapshot.TableCompression.Where(c => tableIds.Contains(c.ObjectId))],
-            DatabaseOptions = snapshot.DatabaseOptions,
-            VolumeStats = snapshot.VolumeStats,
-            FailedAgentJobs = snapshot.FailedAgentJobs,
-            GlobalTraceFlags = snapshot.GlobalTraceFlags,
         };
     }
 

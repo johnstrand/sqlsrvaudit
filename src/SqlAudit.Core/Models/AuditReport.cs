@@ -3,7 +3,7 @@ namespace SqlAudit.Core.Models;
 /// <summary>
 /// The master root document containing the complete output of an audit run, including environment metadata, findings, and telemetry.
 /// </summary>
-public sealed class AuditReport
+public sealed record AuditReport
 {
     public string SchemaVersion { get; init; } = "1.5";
 
@@ -17,7 +17,7 @@ public sealed class AuditReport
 
     public required DateTimeOffset CapturedAtUtc { get; init; }
 
-    private readonly IReadOnlyList<AuditFinding> _findings = [];
+    private IReadOnlyList<AuditFinding> _findings = [];
     private IReadOnlyDictionary<AuditSeverity, int>? _severityCounts;
     private IReadOnlyDictionary<string, int>? _categoryCounts;
 

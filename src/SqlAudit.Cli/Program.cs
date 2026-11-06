@@ -284,43 +284,9 @@ static bool IsFailThresholdBreached(AuditReport report, AuditSeverity? threshold
 
 static AuditReport ApplySuppressionResult(AuditReport source, SuppressionOutcome suppression)
 {
-    return new AuditReport
+    return source with
     {
-        SchemaVersion = source.SchemaVersion,
-        ServerName = source.ServerName,
-        DatabaseName = source.DatabaseName,
-        Edition = source.Edition,
-        ProductVersion = source.ProductVersion,
-        CapturedAtUtc = source.CapturedAtUtc,
-        ExcludedSchemas = source.ExcludedSchemas,
-        ExcludedTables = source.ExcludedTables,
-        TopResourceIntensiveQueries = source.TopResourceIntensiveQueries,
-        TopWaitStats = source.TopWaitStats,
-        QueryStoreRegressions = source.QueryStoreRegressions,
-        ActiveBlockingSessions = source.ActiveBlockingSessions,
-        DeadlockSummary = source.DeadlockSummary,
-        MissingIndexSignals = source.MissingIndexSignals,
-        LogHealth = source.LogHealth,
-        TempDbPressure = source.TempDbPressure,
-        FileGrowthHealth = source.FileGrowthHealth,
-        BackupPosture = source.BackupPosture,
-        SecurityHygieneIssues = source.SecurityHygieneIssues,
-        TableGrowthForecasts = source.TableGrowthForecasts,
-        CollectionWarnings = source.CollectionWarnings,
-        ServerConfigurations = source.ServerConfigurations,
-        LastDbccCheckDbUtc = source.LastDbccCheckDbUtc,
-        TempDbConfig = source.TempDbConfig,
-        SleepingTransactions = source.SleepingTransactions,
-        MemoryPressure = source.MemoryPressure,
-        FileIoLatency = source.FileIoLatency,
-        PlanCache = source.PlanCache,
-        TableCompression = source.TableCompression,
-        DatabaseOptions = source.DatabaseOptions,
-        VolumeStats = source.VolumeStats,
-        FailedAgentJobs = source.FailedAgentJobs,
-        GlobalTraceFlags = source.GlobalTraceFlags,
         Findings = suppression.Findings,
-        CheckExecutions = source.CheckExecutions,
         SuppressionSummary = suppression.Summary,
     };
 }
@@ -339,44 +305,9 @@ static AuditReport AttachGrowthForecasts(AuditReport report, string dataModelPat
         return report;
     }
 
-    return new AuditReport
+    return report with
     {
-        SchemaVersion = report.SchemaVersion,
-        ServerName = report.ServerName,
-        DatabaseName = report.DatabaseName,
-        Edition = report.Edition,
-        ProductVersion = report.ProductVersion,
-        CapturedAtUtc = report.CapturedAtUtc,
-        ExcludedSchemas = report.ExcludedSchemas,
-        ExcludedTables = report.ExcludedTables,
-        TopResourceIntensiveQueries = report.TopResourceIntensiveQueries,
-        TopWaitStats = report.TopWaitStats,
-        QueryStoreRegressions = report.QueryStoreRegressions,
-        ActiveBlockingSessions = report.ActiveBlockingSessions,
-        DeadlockSummary = report.DeadlockSummary,
-        MissingIndexSignals = report.MissingIndexSignals,
-        LogHealth = report.LogHealth,
-        TempDbPressure = report.TempDbPressure,
-        FileGrowthHealth = report.FileGrowthHealth,
-        BackupPosture = report.BackupPosture,
-        SecurityHygieneIssues = report.SecurityHygieneIssues,
         TableGrowthForecasts = forecasts,
-        CollectionWarnings = report.CollectionWarnings,
-        ServerConfigurations = report.ServerConfigurations,
-        LastDbccCheckDbUtc = report.LastDbccCheckDbUtc,
-        TempDbConfig = report.TempDbConfig,
-        SleepingTransactions = report.SleepingTransactions,
-        MemoryPressure = report.MemoryPressure,
-        FileIoLatency = report.FileIoLatency,
-        PlanCache = report.PlanCache,
-        TableCompression = report.TableCompression,
-        DatabaseOptions = report.DatabaseOptions,
-        VolumeStats = report.VolumeStats,
-        FailedAgentJobs = report.FailedAgentJobs,
-        GlobalTraceFlags = report.GlobalTraceFlags,
-        Findings = report.Findings,
-        CheckExecutions = report.CheckExecutions,
-        SuppressionSummary = report.SuppressionSummary,
     };
 }
 
