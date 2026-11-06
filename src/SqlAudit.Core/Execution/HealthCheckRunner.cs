@@ -48,7 +48,7 @@ public sealed class HealthCheckRunner(IEnumerable<IHealthCheck> checks)
                     current.Count,
                     ErrorMessage: null));
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 timer.Stop();
                 findings.Add(new AuditFinding

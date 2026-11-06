@@ -94,6 +94,19 @@ public sealed class HealthCheckRunnerTests
         Assert.False(neverCalled.Executed);
     }
 
+    [Fact]
+    public async Task RunAsync_PropagatesOperationCanceledExceptionFromCheck()
+    {
+        using var cts = new CancellationTokenSource();
+        var canceledCheck = new StubCheck(
+            id: "CHK-CANCEL",
+            execute: () => throw new OperationCanceledException(cts.Token));
+
+        var runner = new HealthCheckRunner([canceledCheck]);
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => runner.RunAsync(CreateContext(), cts.Token));
+    }
+
     private static HealthCheckContext CreateContext()
     {
         return new HealthCheckContext
