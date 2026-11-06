@@ -867,8 +867,8 @@ public sealed class SqlServerSnapshotCollector
                     first.ParentTable,
                     first.ReferencedSchema,
                     first.ReferencedTable,
-                    string.Join(",", g.Select(r => $"[{EscapeBracket(r.ParentColumn)}]")),
-                    string.Join(",", g.Select(r => $"[{EscapeBracket(r.ReferencedColumn)}]")),
+                    string.Join(",", g.Select(r => $"[{r.ParentColumn.Replace("]", "]]", StringComparison.Ordinal)}]")),
+                    string.Join(",", g.Select(r => $"[{r.ReferencedColumn.Replace("]", "]]", StringComparison.Ordinal)}]")),
                     string.Join(",", g.Select(r => FormatType(r.ParentType, r.ParentMaxLength, r.ParentPrecision, r.ParentScale))),
                     string.Join(",", g.Select(r => FormatType(r.ReferencedType, r.ReferencedMaxLength, r.ReferencedPrecision, r.ReferencedScale))),
                     first.IsDisabled,
@@ -1605,16 +1605,18 @@ public sealed class SqlServerSnapshotCollector
         var results = new List<ColumnNullStats>();
         var sqlBuilder = new SqlCommandBuilder();
 
-        foreach (var chunk in nullableByTable.Chunk(200))
+        // SQL Server enforces a maximum of 2,100 parameters per query.
+        // Each column consumes 1 parameter (@col_N), so we must ensure total columns per chunk < 2100.
+        // With maxColumnsPerTable = 30, a chunk of 50 tables has at most 1500 columns, well within the limit.
+        const int maxTablesPerChunk = 50;
+
+        foreach (var chunk in nullableByTable.Chunk(maxTablesPerChunk))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             var columnMap = new Dictionary<string, ColumnInfo>(StringComparer.Ordinal);
             var sb = new System.Text.StringBuilder();
             var firstPart = true;
-
-            await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
-            var paramIndex = 0;
 
             await using var command = new SqlCommand { Connection = connection, CommandTimeout = 60 };
             var paramIndex = 0;
@@ -1633,8 +1635,21 @@ public sealed class SqlServerSnapshotCollector
                     var paramName = $"@col_{paramIndex++}";
                     command.Parameters.AddWithValue(paramName, c.ColumnName);
 
-                    parts.Add($"SELECT {first.ObjectId} AS object_id, {paramName} AS column_name, " +
-                              $"CASE WHEN EXISTS(SELECT 1 FROM {qualifiedTable} WITH (NOLOCK) WHERE {sqlBuilder.QuoteIdentifier(c.ColumnName)} IS NULL) THEN 1 ELSE 0 END AS has_nulls");
+                    if (!firstPart)
+                    {
+                        sb.Append(" UNION ALL ");
+                    }
+                    firstPart = false;
+
+                    sb.Append("SELECT ")
+                      .Append(first.ObjectId)
+                      .Append(" AS object_id, ")
+                      .Append(paramName)
+                      .Append(" AS column_name, CASE WHEN EXISTS(SELECT 1 FROM ")
+                      .Append(qualifiedTable)
+                      .Append(" WITH (NOLOCK) WHERE ")
+                      .Append(sqlBuilder.QuoteIdentifier(c.ColumnName))
+                      .Append(" IS NULL) THEN 1 ELSE 0 END AS has_nulls");
                 }
             }
 
@@ -1643,7 +1658,7 @@ public sealed class SqlServerSnapshotCollector
                 continue;
             }
 
-            command.CommandText = $"SELECT object_id, column_name FROM ({string.Join(" UNION ALL ", parts)}) x WHERE has_nulls = 0";
+            command.CommandText = $"SELECT object_id, column_name FROM ({sb}) x WHERE has_nulls = 0";
 
             await using var reader = await command.ExecuteReaderAsync(System.Data.CommandBehavior.SingleResult, cancellationToken).ConfigureAwait(false);
 
