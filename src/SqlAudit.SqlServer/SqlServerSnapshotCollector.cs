@@ -563,6 +563,28 @@ public sealed class SqlServerSnapshotCollector
             commandTimeoutSeconds).ConfigureAwait(false);
     }
 
+    internal sealed record IndexColumnRow(
+        int ObjectId,
+        int IndexId,
+        string SchemaName,
+        string TableName,
+        string IndexName,
+        string IndexType,
+        bool IsUnique,
+        bool IsPrimaryKey,
+        bool IsUniqueConstraint,
+        bool IsDisabled,
+        bool IsHypothetical,
+        int FillFactor,
+        bool HasFilter,
+        string? FilterDefinition,
+        string? ColumnName,
+        bool? IsIncludedColumn,
+        bool? IsDescendingKey,
+        int? KeyOrdinal,
+        int? IndexColumnId,
+        short? MaxLength);
+
     private static async Task<IReadOnlyList<IndexInfo>> ReadIndexesAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)
     {
         const string sql = """
@@ -579,72 +601,30 @@ public sealed class SqlServerSnapshotCollector
                 i.is_disabled,
                 i.is_hypothetical,
                 i.fill_factor,
-                COALESCE(k.key_columns, N'') AS key_columns,
-                COALESCE(ic.included_columns, N'') AS included_columns,
                 i.has_filter,
                 i.filter_definition,
-                COALESCE(k.key_size_bytes, 0) AS key_size_bytes,
-                COALESCE(k.key_column_count, 0) AS key_column_count
+                c.name AS column_name,
+                ic.is_included_column,
+                ic.is_descending_key,
+                CONVERT(int, ic.key_ordinal) AS key_ordinal,
+                ic.index_column_id,
+                c.max_length
             FROM sys.indexes i
             INNER JOIN sys.tables t ON t.object_id = i.object_id
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
-            OUTER APPLY
-            (
-                SELECT
-                    STUFF(
-                        (
-                            SELECT N',' + QUOTENAME(c.name)
-                            FROM sys.index_columns ic2
-                            INNER JOIN sys.columns c
-                                ON c.object_id = ic2.object_id
-                               AND c.column_id = ic2.column_id
-                            WHERE ic2.object_id = i.object_id
-                              AND ic2.index_id = i.index_id
-                              AND ic2.is_included_column = 0
-                            ORDER BY ic2.key_ordinal
-                            FOR XML PATH(''), TYPE
-                        ).value('.', 'nvarchar(max)'),
-                        1,
-                        1,
-                        N''
-                    ) AS key_columns,
-                    SUM(CASE WHEN c.max_length = -1 THEN 8000 ELSE c.max_length END) AS key_size_bytes,
-                    COUNT(*) AS key_column_count
-                FROM sys.index_columns ic2
-                INNER JOIN sys.columns c
-                    ON c.object_id = ic2.object_id
-                   AND c.column_id = ic2.column_id
-                WHERE ic2.object_id = i.object_id
-                  AND ic2.index_id = i.index_id
-                  AND ic2.is_included_column = 0
-            ) k
-            OUTER APPLY
-            (
-                SELECT STUFF(
-                    (
-                        SELECT N',' + QUOTENAME(c.name)
-                        FROM sys.index_columns ic3
-                        INNER JOIN sys.columns c
-                            ON c.object_id = ic3.object_id
-                           AND c.column_id = ic3.column_id
-                        WHERE ic3.object_id = i.object_id
-                          AND ic3.index_id = i.index_id
-                          AND ic3.is_included_column = 1
-                        ORDER BY ic3.index_column_id
-                        FOR XML PATH(''), TYPE
-                    ).value('.', 'nvarchar(max)'),
-                    1,
-                    1,
-                    N''
-                ) AS included_columns
-            ) ic
+            LEFT JOIN sys.index_columns ic
+                ON ic.object_id = i.object_id
+               AND ic.index_id = i.index_id
+            LEFT JOIN sys.columns c
+                ON c.object_id = ic.object_id
+               AND c.column_id = ic.column_id
             WHERE t.is_ms_shipped = 0
               AND i.index_id > 0
-            ORDER BY s.name, t.name, i.index_id
+            ORDER BY s.name, t.name, i.index_id, ic.is_included_column, ic.key_ordinal, ic.index_column_id
         """;
 
-        return await ReadListAsync(connection, sql,
-            reader => new IndexInfo(
+        var rows = await ReadListAsync(connection, sql,
+            reader => new IndexColumnRow(
                 SqlRead.Int(reader, "object_id"),
                 SqlRead.Int(reader, "index_id"),
                 SqlRead.String(reader, "schema_name"),
@@ -657,14 +637,72 @@ public sealed class SqlServerSnapshotCollector
                 SqlRead.Bool(reader, "is_disabled"),
                 SqlRead.Bool(reader, "is_hypothetical"),
                 SqlRead.Int(reader, "fill_factor"),
-                SqlRead.String(reader, "key_columns"),
-                SqlRead.String(reader, "included_columns"),
                 SqlRead.Bool(reader, "has_filter"),
                 SqlRead.NullableString(reader, "filter_definition"),
-                SqlRead.Int(reader, "key_size_bytes"),
-                SqlRead.Int(reader, "key_column_count")),
+                SqlRead.NullableString(reader, "column_name"),
+                reader["is_included_column"] is DBNull ? null : SqlRead.Bool(reader, "is_included_column"),
+                reader["is_descending_key"] is DBNull ? null : SqlRead.Bool(reader, "is_descending_key"),
+                reader["key_ordinal"] is DBNull ? null : SqlRead.Int(reader, "key_ordinal"),
+                reader["index_column_id"] is DBNull ? null : SqlRead.Int(reader, "index_column_id"),
+                reader["max_length"] is DBNull ? null : Convert.ToInt16(reader["max_length"], CultureInfo.InvariantCulture)),
             cancellationToken,
             commandTimeoutSeconds).ConfigureAwait(false);
+
+        return AggregateIndexRows(rows);
+    }
+
+    internal static IReadOnlyList<IndexInfo> AggregateIndexRows(IReadOnlyList<IndexColumnRow> rows)
+    {
+        return rows
+            .GroupBy(r => (r.ObjectId, r.IndexId))
+            .Select(g =>
+            {
+                var first = g.First();
+                var keyCols = g
+                    .Where(r => r.ColumnName is not null && r.IsIncludedColumn == false)
+                    .OrderBy(r => r.KeyOrdinal ?? 0)
+                    .ThenBy(r => r.IndexColumnId ?? 0)
+                    .ToArray();
+
+                var includedCols = g
+                    .Where(r => r.ColumnName is not null && r.IsIncludedColumn == true)
+                    .OrderBy(r => r.IndexColumnId ?? 0)
+                    .ToArray();
+
+                var keyColumnsString = string.Join(
+                    ",",
+                    keyCols.Select(r => r.IsDescendingKey == true
+                        ? $"{SqlName.Column(r.ColumnName!)} DESC"
+                        : SqlName.Column(r.ColumnName!)));
+
+                var includedColumnsString = string.Join(
+                    ",",
+                    includedCols.Select(r => SqlName.Column(r.ColumnName!)));
+
+                var keySizeBytes = keyCols.Sum(r => r.MaxLength == -1 ? 8000 : (int)(r.MaxLength ?? 0));
+                var keyColumnCount = keyCols.Length;
+
+                return new IndexInfo(
+                    first.ObjectId,
+                    first.IndexId,
+                    first.SchemaName,
+                    first.TableName,
+                    first.IndexName,
+                    first.IndexType,
+                    first.IsUnique,
+                    first.IsPrimaryKey,
+                    first.IsUniqueConstraint,
+                    first.IsDisabled,
+                    first.IsHypothetical,
+                    first.FillFactor,
+                    keyColumnsString,
+                    includedColumnsString,
+                    first.HasFilter,
+                    first.FilterDefinition,
+                    keySizeBytes,
+                    keyColumnCount);
+            })
+            .ToArray();
     }
 
     private static async Task<IReadOnlyList<IndexUsageInfo>> ReadIndexUsageAsync(SqlConnection connection, CancellationToken cancellationToken, int commandTimeoutSeconds)

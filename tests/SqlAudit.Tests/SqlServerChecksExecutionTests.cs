@@ -135,6 +135,68 @@ public sealed class SqlServerChecksExecutionTests
     }
 
     [Fact]
+    public async Task OverlappingIndexCheck_AllowsUniqueIndexAsWideCoveringIndexAndRespectsSortDirection()
+    {
+        var context = CreateContext(
+            indexes:
+            [
+                CreateIndex(7, 1, "IX_NonUnique_Narrow", keyColumns: "[A]", includedColumns: "[B]"),
+                CreateIndex(7, 2, "UQ_Wide", keyColumns: "[A],[B]") with { IsUnique = true },
+                CreateIndex(7, 3, "IX_Desc", keyColumns: "[A] DESC,[B]"),
+            ]);
+
+        var findings = await ExecuteCheckAsync("IDX-002", context);
+
+        var finding = Assert.Single(findings);
+        Assert.Contains("IX_NonUnique_Narrow", finding.Description, StringComparison.Ordinal);
+        Assert.Contains("UQ_Wide", finding.Description, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DuplicateIndexCheck_DistinguishesSortDirection()
+    {
+        var context = CreateContext(
+            indexes:
+            [
+                CreateIndex(21, 1, "IX_Asc", keyColumns: "[A],[B]"),
+                CreateIndex(21, 2, "IX_Desc", keyColumns: "[A],[B] DESC"),
+            ]);
+
+        var findings = await ExecuteCheckAsync("IDX-001", context);
+        Assert.Empty(findings);
+    }
+
+    [Fact]
+    public void AggregateIndexRows_CombinesKeyAndIncludedColumnsWithSortDirection()
+    {
+        var rows = new[]
+        {
+            new SqlServerSnapshotCollector.IndexColumnRow(
+                ObjectId: 10, IndexId: 2, SchemaName: "dbo", TableName: "Orders", IndexName: "IX_Orders_Date",
+                IndexType: "NONCLUSTERED", IsUnique: false, IsPrimaryKey: false, IsUniqueConstraint: false,
+                IsDisabled: false, IsHypothetical: false, FillFactor: 90, HasFilter: false, FilterDefinition: null,
+                ColumnName: "CustomerId", IsIncludedColumn: false, IsDescendingKey: false, KeyOrdinal: 1, IndexColumnId: 1, MaxLength: 4),
+            new SqlServerSnapshotCollector.IndexColumnRow(
+                ObjectId: 10, IndexId: 2, SchemaName: "dbo", TableName: "Orders", IndexName: "IX_Orders_Date",
+                IndexType: "NONCLUSTERED", IsUnique: false, IsPrimaryKey: false, IsUniqueConstraint: false,
+                IsDisabled: false, IsHypothetical: false, FillFactor: 90, HasFilter: false, FilterDefinition: null,
+                ColumnName: "CreatedAt", IsIncludedColumn: false, IsDescendingKey: true, KeyOrdinal: 2, IndexColumnId: 2, MaxLength: 8),
+            new SqlServerSnapshotCollector.IndexColumnRow(
+                ObjectId: 10, IndexId: 2, SchemaName: "dbo", TableName: "Orders", IndexName: "IX_Orders_Date",
+                IndexType: "NONCLUSTERED", IsUnique: false, IsPrimaryKey: false, IsUniqueConstraint: false,
+                IsDisabled: false, IsHypothetical: false, FillFactor: 90, HasFilter: false, FilterDefinition: null,
+                ColumnName: "Notes", IsIncludedColumn: true, IsDescendingKey: false, KeyOrdinal: 0, IndexColumnId: 3, MaxLength: -1),
+        };
+
+        var indexes = SqlServerSnapshotCollector.AggregateIndexRows(rows);
+        var idx = Assert.Single(indexes);
+        Assert.Equal("[CustomerId],[CreatedAt] DESC", idx.KeyColumns);
+        Assert.Equal("[Notes]", idx.IncludedColumns);
+        Assert.Equal(12, idx.KeySizeBytes);
+        Assert.Equal(2, idx.KeyColumnCount);
+    }
+
+    [Fact]
     public async Task IdentityExhaustionCheck_UsesCriticalSeverityAboveCriticalThreshold()
     {
         var context = CreateContext(

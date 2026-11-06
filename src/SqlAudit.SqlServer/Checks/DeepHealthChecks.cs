@@ -267,8 +267,8 @@ internal sealed class DuplicateIndexCheck : IHealthCheck
                 i.ObjectId,
                 i.IsUnique,
                 i.IndexType,
-                i.KeyColumns,
-                i.IncludedColumns,
+                KeyColumns = NormalizeKeyColumns(i.KeyColumns),
+                IncludedColumns = NormalizeIncludedColumns(i.IncludedColumns),
                 Filter = i.FilterDefinition ?? string.Empty,
             })
             .Where(g => g.Skip(1).Any());
@@ -317,6 +317,59 @@ internal sealed class DuplicateIndexCheck : IHealthCheck
 
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
     }
+
+    internal static IReadOnlyList<(string Column, bool IsDescending)> ParseKeyColumns(string keyColumns)
+    {
+        if (string.IsNullOrWhiteSpace(keyColumns))
+        {
+            return [];
+        }
+
+        var parts = keyColumns.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        var result = new List<(string Column, bool IsDescending)>(parts.Length);
+
+        foreach (var part in parts)
+        {
+            if (part.EndsWith(" DESC", StringComparison.OrdinalIgnoreCase))
+            {
+                var col = part[..^5].Trim();
+                result.Add((col.ToUpperInvariant(), true));
+            }
+            else if (part.EndsWith(" ASC", StringComparison.OrdinalIgnoreCase))
+            {
+                var col = part[..^4].Trim();
+                result.Add((col.ToUpperInvariant(), false));
+            }
+            else
+            {
+                result.Add((part.Trim().ToUpperInvariant(), false));
+            }
+        }
+
+        return result;
+    }
+
+    internal static string NormalizeKeyColumns(string keyColumns)
+    {
+        var parsed = ParseKeyColumns(keyColumns);
+        return string.Join(",", parsed.Select(k => k.IsDescending ? $"{k.Column} DESC" : k.Column));
+    }
+
+    internal static string NormalizeIncludedColumns(string includedColumns)
+    {
+        if (string.IsNullOrWhiteSpace(includedColumns))
+        {
+            return string.Empty;
+        }
+
+        var cols = includedColumns
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(c => c.ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(c => c, StringComparer.OrdinalIgnoreCase);
+
+        return string.Join(",", cols);
+    }
 }
 
 internal sealed class OverlappingIndexCheck : IHealthCheck
@@ -349,13 +402,18 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
     private static IEnumerable<IndexInfo[]> GetComparableIndexGroups(IEnumerable<IndexInfo> indexes)
     {
         return indexes
-            .Where(i => !i.IsPrimaryKey && !i.IsUniqueConstraint && !i.IsUnique && !i.IsDisabled && !i.IsHypothetical)
+            .Where(i => !i.IsDisabled && !i.IsHypothetical)
             .GroupBy(i => i.ObjectId)
             .Select(g => g.ToArray());
     }
 
     private static AuditFinding? FindOverlappingIndex(IReadOnlyCollection<IndexInfo> indexes, IndexInfo narrow)
     {
+        if (narrow.IsPrimaryKey || narrow.IsUniqueConstraint || narrow.IsUnique)
+        {
+            return null;
+        }
+
         foreach (var wide in indexes)
         {
             if (narrow.ObjectId == wide.ObjectId && narrow.IndexId == wide.IndexId)
@@ -376,7 +434,7 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
     private static AuditFinding? TryCreateOverlappingIndexFinding(IndexInfo narrow, IndexInfo wide)
     {
         if (!IsPrefix(narrow.KeyColumns, wide.KeyColumns)
-            || !IncludesSubset(narrow.IncludedColumns, wide.IncludedColumns)
+            || !IncludesSubset(narrow, wide)
             || !FiltersCompatible(narrow, wide))
         {
             return null;
@@ -412,28 +470,40 @@ internal sealed class OverlappingIndexCheck : IHealthCheck
 
     private static bool IsPrefix(string prefix, string target)
     {
-        if (string.IsNullOrWhiteSpace(prefix) || string.IsNullOrWhiteSpace(target))
+        var narrowKeys = DuplicateIndexCheck.ParseKeyColumns(prefix);
+        var wideKeys = DuplicateIndexCheck.ParseKeyColumns(target);
+
+        if (narrowKeys.Count == 0 || wideKeys.Count == 0 || narrowKeys.Count > wideKeys.Count)
         {
             return false;
         }
 
-        if (string.Equals(prefix, target, StringComparison.OrdinalIgnoreCase))
+        for (var i = 0; i < narrowKeys.Count; i++)
         {
-            return true;
+            if (!string.Equals(narrowKeys[i].Column, wideKeys[i].Column, StringComparison.OrdinalIgnoreCase)
+                || narrowKeys[i].IsDescending != wideKeys[i].IsDescending)
+            {
+                return false;
+            }
         }
 
-        return target.StartsWith(prefix + ",", StringComparison.OrdinalIgnoreCase);
+        return true;
     }
 
-    private static bool IncludesSubset(string subset, string superset)
+    private static bool IncludesSubset(IndexInfo narrow, IndexInfo wide)
     {
-        var subsetColumns = SplitColumns(subset);
+        var subsetColumns = SplitColumns(narrow.IncludedColumns);
         if (subsetColumns.Count == 0)
         {
             return true;
         }
 
-        var supersetColumns = SplitColumns(superset);
+        var supersetColumns = SplitColumns(wide.IncludedColumns);
+        foreach (var (col, _) in DuplicateIndexCheck.ParseKeyColumns(wide.KeyColumns))
+        {
+            supersetColumns.Add(col);
+        }
+
         return subsetColumns.All(supersetColumns.Contains);
     }
 
