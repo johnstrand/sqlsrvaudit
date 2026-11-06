@@ -2045,6 +2045,7 @@ public sealed class SqlServerSnapshotCollector
             WHERE s.status = 'sleeping'
               AND s.open_transaction_count > 0
               AND s.session_id <> @@SPID
+              AND s.database_id = DB_ID()
             ORDER BY s.total_elapsed_time DESC
             """;
         return await ReadListAsync(
@@ -2114,18 +2115,18 @@ public sealed class SqlServerSnapshotCollector
             SELECT
                 f.database_id,
                 f.file_id,
-                mf.name AS logical_name,
-                CASE mf.type WHEN 0 THEN 'ROWS' WHEN 1 THEN 'LOG' ELSE 'OTHER' END AS file_type,
+                df.name AS logical_name,
+                CASE df.type WHEN 0 THEN 'ROWS' WHEN 1 THEN 'LOG' ELSE 'OTHER' END AS file_type,
                 f.num_of_reads,
                 f.num_of_writes,
                 CASE WHEN f.num_of_reads = 0 THEN 0
                      ELSE CAST(f.io_stall_read_ms / f.num_of_reads AS DECIMAL(10,2)) END AS avg_read_latency_ms,
                 CASE WHEN f.num_of_writes = 0 THEN 0
                      ELSE CAST(f.io_stall_write_ms / f.num_of_writes AS DECIMAL(10,2)) END AS avg_write_latency_ms,
-                mf.size * 8.0 / 1024 AS size_mb
-            FROM sys.dm_io_virtual_file_stats(NULL, NULL) AS f
-            INNER JOIN sys.master_files AS mf
-                ON f.database_id = mf.database_id AND f.file_id = mf.file_id
+                df.size * 8.0 / 1024 AS size_mb
+            FROM sys.dm_io_virtual_file_stats(DB_ID(), NULL) AS f
+            INNER JOIN sys.database_files AS df
+                ON f.file_id = df.file_id
             ORDER BY f.database_id, f.file_id
             """;
         return await ReadListAsync(
@@ -2194,7 +2195,8 @@ public sealed class SqlServerSnapshotCollector
             INNER JOIN sys.schemas AS s ON t.schema_id = s.schema_id
             INNER JOIN sys.partitions AS p ON t.object_id = p.object_id AND p.index_id IN (0, 1)
             INNER JOIN sys.dm_db_partition_stats AS ps
-                ON p.object_id = ps.object_id AND p.partition_number = ps.partition_number AND ps.index_id IN (0, 1)
+                ON p.partition_id = ps.partition_id
+            WHERE t.is_ms_shipped = 0
             ORDER BY ps.used_page_count DESC
             """;
         return await ReadListAsync(
