@@ -942,38 +942,11 @@ public sealed class SqlServerSnapshotCollector
                 t.name AS table_name,
                 c.name AS column_name,
                 ty.name AS data_type,
+                CONVERT(decimal(38,0), ic.seed_value) AS seed_value,
+                CONVERT(decimal(38,0), ic.increment_value) AS increment_value,
                 CONVERT(decimal(38,0), ic.last_value) AS last_value,
-                CASE ty.name
-                    WHEN N'tinyint' THEN CONVERT(decimal(38,0), 255)
-                    WHEN N'smallint' THEN CONVERT(decimal(38,0), 32767)
-                    WHEN N'int' THEN CONVERT(decimal(38,0), 2147483647)
-                    WHEN N'bigint' THEN CONVERT(decimal(38,0), 9223372036854775807)
-                    WHEN N'numeric' THEN POWER(CONVERT(decimal(38,0), 10), c.precision) - 1
-                    WHEN N'decimal' THEN POWER(CONVERT(decimal(38,0), 10), c.precision) - 1
-                    ELSE CONVERT(decimal(38,0), 0)
-                END AS max_value,
-                CASE
-                    WHEN ic.last_value IS NULL THEN CONVERT(decimal(10,2), 0)
-                    WHEN CASE ty.name
-                        WHEN N'tinyint' THEN CONVERT(decimal(38,0), 255)
-                        WHEN N'smallint' THEN CONVERT(decimal(38,0), 32767)
-                        WHEN N'int' THEN CONVERT(decimal(38,0), 2147483647)
-                        WHEN N'bigint' THEN CONVERT(decimal(38,0), 9223372036854775807)
-                        WHEN N'numeric' THEN POWER(CONVERT(decimal(38,0), 10), c.precision) - 1
-                        WHEN N'decimal' THEN POWER(CONVERT(decimal(38,0), 10), c.precision) - 1
-                        ELSE CONVERT(decimal(38,0), 0)
-                    END = 0 THEN CONVERT(decimal(10,2), 0)
-                    ELSE CONVERT(decimal(10,2), (ABS(CONVERT(decimal(38,10), ic.last_value)) /
-                        CASE ty.name
-                            WHEN N'tinyint' THEN CONVERT(decimal(38,0), 255)
-                            WHEN N'smallint' THEN CONVERT(decimal(38,0), 32767)
-                            WHEN N'int' THEN CONVERT(decimal(38,0), 2147483647)
-                            WHEN N'bigint' THEN CONVERT(decimal(38,0), 9223372036854775807)
-                            WHEN N'numeric' THEN POWER(CONVERT(decimal(38,0), 10), c.precision) - 1
-                            WHEN N'decimal' THEN POWER(CONVERT(decimal(38,0), 10), c.precision) - 1
-                            ELSE CONVERT(decimal(38,0), 0)
-                        END) * 100.0)
-                END AS usage_percent
+                bounds.min_value,
+                bounds.max_value
             FROM sys.identity_columns ic
             INNER JOIN sys.columns c
                 ON c.object_id = ic.object_id
@@ -981,21 +954,123 @@ public sealed class SqlServerSnapshotCollector
             INNER JOIN sys.tables t ON t.object_id = ic.object_id
             INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
             INNER JOIN sys.types ty ON ty.user_type_id = c.user_type_id
+            CROSS APPLY (
+                SELECT
+                    CASE ty.name
+                        WHEN N'tinyint' THEN CONVERT(decimal(38,0), 0)
+                        WHEN N'smallint' THEN CONVERT(decimal(38,0), -32768)
+                        WHEN N'int' THEN CONVERT(decimal(38,0), -2147483648)
+                        WHEN N'bigint' THEN CONVERT(decimal(38,0), -9223372036854775808)
+                        WHEN N'numeric' THEN -(POWER(CONVERT(decimal(38,0), 10), CASE WHEN c.precision > 28 THEN 28 ELSE c.precision END) - 1)
+                        WHEN N'decimal' THEN -(POWER(CONVERT(decimal(38,0), 10), CASE WHEN c.precision > 28 THEN 28 ELSE c.precision END) - 1)
+                        ELSE CONVERT(decimal(38,0), 0)
+                    END AS min_value,
+                    CASE ty.name
+                        WHEN N'tinyint' THEN CONVERT(decimal(38,0), 255)
+                        WHEN N'smallint' THEN CONVERT(decimal(38,0), 32767)
+                        WHEN N'int' THEN CONVERT(decimal(38,0), 2147483647)
+                        WHEN N'bigint' THEN CONVERT(decimal(38,0), 9223372036854775807)
+                        WHEN N'numeric' THEN POWER(CONVERT(decimal(38,0), 10), CASE WHEN c.precision > 28 THEN 28 ELSE c.precision END) - 1
+                        WHEN N'decimal' THEN POWER(CONVERT(decimal(38,0), 10), CASE WHEN c.precision > 28 THEN 28 ELSE c.precision END) - 1
+                        ELSE CONVERT(decimal(38,0), 0)
+                    END AS max_value
+            ) bounds
             WHERE t.is_ms_shipped = 0
         """;
 
         return await ReadListAsync(connection, sql,
-            reader => new IdentityColumnInfo(
-                SqlRead.Int(reader, "object_id"),
-                SqlRead.String(reader, "schema_name"),
-                SqlRead.String(reader, "table_name"),
-                SqlRead.String(reader, "column_name"),
-                SqlRead.String(reader, "data_type"),
-                SqlRead.NullableDecimal(reader, "last_value"),
-                SqlRead.Decimal(reader, "max_value"),
-                SqlRead.Decimal(reader, "usage_percent")),
+            reader =>
+            {
+                var lastValue = SqlRead.NullableDecimal(reader, "last_value");
+                var seedValue = SqlRead.NullableDecimal(reader, "seed_value") ?? 1m;
+                var incrementValue = SqlRead.NullableDecimal(reader, "increment_value") ?? 1m;
+                var minValue = SqlRead.Decimal(reader, "min_value");
+                var maxValue = SqlRead.Decimal(reader, "max_value");
+                var usagePercent = ComputeIdentityUsagePercent(lastValue, seedValue, incrementValue, minValue, maxValue);
+
+                return new IdentityColumnInfo(
+                    SqlRead.Int(reader, "object_id"),
+                    SqlRead.String(reader, "schema_name"),
+                    SqlRead.String(reader, "table_name"),
+                    SqlRead.String(reader, "column_name"),
+                    SqlRead.String(reader, "data_type"),
+                    lastValue,
+                    maxValue,
+                    usagePercent);
+            },
             cancellationToken,
             commandTimeoutSeconds).ConfigureAwait(false);
+    }
+
+    internal static decimal ComputeIdentityUsagePercent(
+        decimal? lastValue,
+        decimal seedValue,
+        decimal incrementValue,
+        decimal minValue,
+        decimal maxValue)
+    {
+        if (lastValue is null || maxValue <= minValue || incrementValue == 0m)
+        {
+            return 0m;
+        }
+
+        var current = lastValue.Value;
+        decimal used;
+        decimal totalRange;
+
+        if (incrementValue > 0m)
+        {
+            decimal start;
+            if (seedValue < 0m)
+            {
+                start = Math.Min(seedValue, current);
+            }
+            else
+            {
+                start = current < 0m ? minValue : 0m;
+            }
+
+            totalRange = maxValue - start;
+            if (totalRange <= 0m)
+            {
+                return 100m;
+            }
+
+            used = current - start;
+        }
+        else
+        {
+            var defaultStart = minValue < 0m ? 0m : maxValue;
+            decimal start;
+            if (seedValue > 0m)
+            {
+                start = Math.Max(seedValue, current);
+            }
+            else
+            {
+                start = current > 0m ? maxValue : defaultStart;
+            }
+
+            totalRange = start - minValue;
+            if (totalRange <= 0m)
+            {
+                return 100m;
+            }
+
+            used = start - current;
+        }
+
+        if (used <= 0m)
+        {
+            return 0m;
+        }
+
+        if (used >= totalRange)
+        {
+            return 100m;
+        }
+
+        return Math.Round((used / totalRange) * 100m, 2, MidpointRounding.AwayFromZero);
     }
 
     private static async Task<IReadOnlyList<ResourceIntensiveQueryInfo>> ReadTopResourceIntensiveQueriesAsync(

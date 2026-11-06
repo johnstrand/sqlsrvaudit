@@ -149,6 +149,60 @@ public sealed class SqlServerChecksExecutionTests
         Assert.Equal(AuditSeverity.Critical, finding.Severity);
     }
 
+    [Theory]
+    [InlineData(null, 1L, 1L, -2147483648L, 2147483647L, 0)]
+    [InlineData(-2147483648L, -2147483648L, 1L, -2147483648L, 2147483647L, 0)]
+    [InlineData(0L, -2147483648L, 1L, -2147483648L, 2147483647L, 50)]
+    [InlineData(2147483647L, -2147483648L, 1L, -2147483648L, 2147483647L, 100)]
+    [InlineData(-2147483648L, 1L, 1L, -2147483648L, 2147483647L, 0)]
+    [InlineData(1073741823L, 1L, 1L, -2147483648L, 2147483647L, 50)]
+    [InlineData(2147483647L, 1L, 1L, -2147483648L, 2147483647L, 100)]
+    [InlineData(-1L, -1L, -1L, -2147483648L, 2147483647L, 0)]
+    [InlineData(-1073741824L, -1L, -1L, -2147483648L, 2147483647L, 50)]
+    [InlineData(-2147483648L, -1L, -1L, -2147483648L, 2147483647L, 100)]
+    [InlineData(2147483647L, 2147483647L, -1L, -2147483648L, 2147483647L, 0)]
+    [InlineData(0L, 2147483647L, -1L, -2147483648L, 2147483647L, 50)]
+    [InlineData(255L, 255L, -1L, 0L, 255L, 0)]
+    [InlineData(0L, 255L, -1L, 0L, 255L, 100)]
+    public void ComputeIdentityUsagePercent_HandlesNegativeSeedsAndIncrements(
+        long? lastValue,
+        long seedValue,
+        long incrementValue,
+        long minValue,
+        long maxValue,
+        decimal expectedPercent)
+    {
+        var actual = SqlServerSnapshotCollector.ComputeIdentityUsagePercent(
+            lastValue.HasValue ? (decimal)lastValue.Value : null,
+            seedValue,
+            incrementValue,
+            minValue,
+            maxValue);
+
+        Assert.Equal(expectedPercent, actual);
+    }
+
+    [Fact]
+    public async Task IdentityExhaustionCheck_DoesNotFlagNegativeSeededColumnAtStart()
+    {
+        var usagePercent = SqlServerSnapshotCollector.ComputeIdentityUsagePercent(
+            lastValue: -2_147_483_648m,
+            seedValue: -2_147_483_648m,
+            incrementValue: 1m,
+            minValue: -2_147_483_648m,
+            maxValue: 2_147_483_647m);
+
+        var context = CreateContext(
+            identityColumns:
+            [
+                new IdentityColumnInfo(89, "dbo", "Telemetry", "Id", "int", LastValue: -2_147_483_648m, MaxValue: 2_147_483_647m, UsagePercent: usagePercent),
+            ]);
+
+        var findings = await ExecuteCheckAsync("CAP-001", context);
+
+        Assert.Empty(findings);
+    }
+
     [Fact]
     public async Task OverWideIndexKeyCheck_UsesMediumAndHighSeverities()
     {
