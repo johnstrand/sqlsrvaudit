@@ -37,9 +37,9 @@ internal sealed class UncompressedLargeTableCheck : IHealthCheck
                 Description = $"Table {tableName} has {table.Rows:N0} rows and uses {sizeMb:F0} MB of space with no compression. Row compression can reduce space usage and improve I/O performance at a small CPU cost.",
                 Impact = "Uncompressed tables consume more storage and generate more I/O, which can slow down full scans and reduce buffer pool efficiency.",
                 Recommendation = "Test ROW compression first — it is generally safe and has minimal impact. Evaluate PAGE compression for even greater reduction (test for CPU impact first).",
-                ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
-                    AuditOperationRisk.PotentiallyOnlineIndexBuild,
-                    supportsOnline ? "REBUILD with ONLINE = ON does not require downtime but does consume I/O and CPU." : "ONLINE = ON requires Enterprise or Developer edition. Rebuild with ONLINE = OFF requires a maintenance window."),
+                ServiceWindow = supportsOnline
+                    ? ServiceWindowAdvisor.No("REBUILD with ONLINE = ON does not require downtime but does consume I/O and CPU.")
+                    : ServiceWindowAdvisor.Yes("ONLINE = ON requires Enterprise or Developer edition. Rebuild with ONLINE = OFF requires a maintenance window."),
                 FixScript = $"""
                     -- Test row compression first with an online rebuild.
                     -- RequiresServiceWindow: {(supportsOnline ? "false" : "true")}

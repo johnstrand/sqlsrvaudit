@@ -729,7 +729,47 @@ public sealed class SqlServerChecksExecutionTests
 
         var findings = await ExecuteCheckAsync("IDX-010", context);
 
-        Assert.Equal(AuditSeverity.Medium, Assert.Single(findings).Severity);
+        var finding = Assert.Single(findings);
+        Assert.Equal(AuditSeverity.Medium, finding.Severity);
+        Assert.True(finding.ServiceWindow.RequiresServiceWindow);
+    }
+
+    [Fact]
+    public async Task WriteAmplificationIndexCheck_IgnoresPrimaryKeysAndConstraints()
+    {
+        var pkIndex = new IndexInfo(
+            ObjectId: 1,
+            IndexId: 2,
+            SchemaName: "dbo",
+            TableName: "Orders",
+            IndexName: "PK_Orders",
+            IndexType: "NONCLUSTERED",
+            IsUnique: true,
+            IsPrimaryKey: true,
+            IsUniqueConstraint: false,
+            IsDisabled: false,
+            IsHypothetical: false,
+            FillFactor: 0,
+            KeyColumns: "[Id]",
+            IncludedColumns: string.Empty,
+            HasFilter: false,
+            FilterDefinition: null,
+            KeySizeBytes: 4,
+            KeyColumnCount: 1);
+
+        var usageRecord = new IndexUsageInfo(
+            ObjectId: 1,
+            IndexId: 2,
+            UserSeeks: 0,
+            UserScans: 0,
+            UserLookups: 0,
+            UserUpdates: 50_000,
+            LastReadUtc: null);
+        var context = CreateContext(indexes: [pkIndex], usage: [usageRecord]);
+
+        var findings = await ExecuteCheckAsync("IDX-010", context);
+
+        Assert.Empty(findings);
     }
 
     [Fact]

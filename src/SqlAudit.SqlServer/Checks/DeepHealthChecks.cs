@@ -1151,6 +1151,13 @@ internal sealed class WriteAmplificationIndexCheck : IHealthCheck
                 continue;
             }
 
+            if (!IsWriteAmplificationCandidate(index))
+            {
+                continue;
+            }
+
+            var totalReads = usage.UserSeeks + usage.UserScans + usage.UserLookups;
+
             var tableName = SqlName.Table(index.SchemaName, index.TableName);
             findings.Add(new AuditFinding
             {
@@ -1159,27 +1166,35 @@ internal sealed class WriteAmplificationIndexCheck : IHealthCheck
                 Category = Category,
                 Severity = AuditSeverity.Medium,
                 DatabaseObject = $"{tableName}.{SqlName.Index(index.IndexName)}",
-                Description = $"Index '{index.IndexName}' has been updated {usage.UserUpdates:N0} times but only read {usage.UserSeeks + usage.UserScans + usage.UserLookups:N0} times since last restart. This index is consuming write overhead without providing read benefit.",
+                Description = $"Index '{index.IndexName}' has been updated {usage.UserUpdates:N0} times but only read {totalReads:N0} times since last restart. This index is consuming write overhead without providing read benefit.",
                 Impact = "Every INSERT, UPDATE, and DELETE on the table must also maintain this index, increasing write latency and log volume.",
                 Recommendation = "Verify the index is not relied on by maintenance or one-off queries, then consider dropping it.",
                 ServiceWindow = ServiceWindowAdvisor.ForConservativePolicy(
-                    AuditOperationRisk.MetadataOnly,
-                    "Dropping an index acquires a brief schema-modification lock."),
+                    AuditOperationRisk.Unknown,
+                    "Dropping indexes should be scheduled to monitor plan changes."),
                 FixScript = $"""
-                    -- RequiresServiceWindow: false
+                    -- RequiresServiceWindow: true
                     -- Validate with a brief monitoring period before dropping.
                     DROP INDEX {SqlName.Index(index.IndexName)} ON {tableName};
                     """,
                 Evidence =
                 [
                     new FindingEvidence("UserUpdates", usage.UserUpdates.ToString("N0", CultureInfo.InvariantCulture)),
-                    new FindingEvidence("TotalReads", (usage.UserSeeks + usage.UserScans + usage.UserLookups).ToString("N0", CultureInfo.InvariantCulture)),
+                    new FindingEvidence("TotalReads", totalReads.ToString("N0", CultureInfo.InvariantCulture)),
                     new FindingEvidence("KeyColumns", index.KeyColumns),
                 ],
             });
         }
 
         return Task.FromResult<IReadOnlyCollection<AuditFinding>>(findings);
+    }
+
+    private static bool IsWriteAmplificationCandidate(IndexInfo index)
+    {
+        return !index.IsPrimaryKey
+               && !index.IsUniqueConstraint
+               && !index.IsDisabled
+               && !index.IsHypothetical;
     }
 }
 
