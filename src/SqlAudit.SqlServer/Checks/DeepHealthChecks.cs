@@ -1080,6 +1080,9 @@ internal sealed class ScanHeavyIndexCheck : IHealthCheck
         const long minReads = 1000;
         const int scanToSeekRatioThreshold = 10;
 
+        var indexMeta = context.Snapshot.Indexes
+            .ToDictionary(i => (i.ObjectId, i.IndexId));
+
         var findings = new List<AuditFinding>();
 
         foreach (var usage in context.Snapshot.IndexUsage
@@ -1088,9 +1091,7 @@ internal sealed class ScanHeavyIndexCheck : IHealthCheck
                         && u.UserScans > 0
                         && u.UserScans / (u.UserSeeks + 1L) > scanToSeekRatioThreshold))
         {
-            var index = context.Snapshot.Indexes.FirstOrDefault(
-                i => i.ObjectId == usage.ObjectId && i.IndexId == usage.IndexId);
-            if (index is null)
+            if (!indexMeta.TryGetValue((usage.ObjectId, usage.IndexId), out var index))
             {
                 continue;
             }
@@ -1134,6 +1135,9 @@ internal sealed class WriteAmplificationIndexCheck : IHealthCheck
         const long minUpdates = 10_000;
         const long maxReads = 10;
 
+        var indexMeta = context.Snapshot.Indexes
+            .ToDictionary(i => (i.ObjectId, i.IndexId));
+
         var findings = new List<AuditFinding>();
 
         foreach (var usage in context.Snapshot.IndexUsage
@@ -1141,9 +1145,7 @@ internal sealed class WriteAmplificationIndexCheck : IHealthCheck
                         && u.UserUpdates >= minUpdates
                         && (u.UserSeeks + u.UserScans + u.UserLookups) <= maxReads))
         {
-            var index = context.Snapshot.Indexes.FirstOrDefault(
-                i => i.ObjectId == usage.ObjectId && i.IndexId == usage.IndexId);
-            if (index is null)
+            if (!indexMeta.TryGetValue((usage.ObjectId, usage.IndexId), out var index))
             {
                 continue;
             }
