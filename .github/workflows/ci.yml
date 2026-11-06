@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore "SqlAudit.slnx"
+
+    - name: Build
+      run: dotnet build "SqlAudit.slnx" --no-restore --configuration Release -warnaserror
+
+    - name: Test
+      run: dotnet test "SqlAudit.slnx" --no-build --configuration Release

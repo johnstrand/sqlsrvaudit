@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -22,10 +22,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.4.0" />
-    <PackageReference Include="SonarAnalyzer.CSharp" Version="10.22.0.136894">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
-    </PackageReference>
     <PackageReference Include="Spectre.Console.Testing" Version="0.49.1" />
     <PackageReference Include="xunit.v3" Version="3.2.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
@@ -43,10 +39,6 @@
     <ProjectReference Include="..\..\src\SqlAudit.Reporting\SqlAudit.Reporting.csproj" />
     <ProjectReference Include="..\..\src\SqlAudit.SqlServer\SqlAudit.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\SqlAudit.Cli\SqlAudit.Cli.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <PackageReference Update="Meziantou.Analyzer" Version="3.0.45" />
   </ItemGroup>
 
 </Project>
