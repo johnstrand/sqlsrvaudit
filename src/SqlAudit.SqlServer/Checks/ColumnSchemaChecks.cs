@@ -32,7 +32,7 @@ internal sealed class NullableColumnWithNoNullsCheck : IHealthCheck
 
                 return new AuditFinding
                 {
-                    Id = $"COL-001-{col.ObjectId}-{col.ColumnName.GetHashCode(StringComparison.OrdinalIgnoreCase):X}",
+                    Id = $"COL-001-{col.ObjectId}-{SqlName.ObjectNameSuffix(col.ColumnName)}",
                     Title = "Nullable column contains no NULL values",
                     Category = Category,
                     Severity = AuditSeverity.Info,
@@ -92,7 +92,7 @@ internal sealed class OversizedStringColumnCheck : IHealthCheck
 
             findings.Add(new AuditFinding
             {
-                Id = $"COL-002-{col.ObjectId}-{col.ColumnName.GetHashCode(StringComparison.OrdinalIgnoreCase):X}",
+                Id = $"COL-002-{col.ObjectId}-{SqlName.ObjectNameSuffix(col.ColumnName)}",
                 Title = "String column declared wider than typically necessary",
                 Category = Category,
                 Severity = severity,
